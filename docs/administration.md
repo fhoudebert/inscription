@@ -3,7 +3,7 @@
 [← Retour au README](../README.md) · [Créer un formulaire](formulaires.md)
 
 Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Récupérer les réponses](#récupérer-les-réponses) ·
-[Gérer les formulaires](#gérer-les-formulaires) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
+[Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
 [Langues de l'interface](#langues-de-linterface) · [Sécurité](#sécurité) · [Dépannage](#dépannage)
 
 ## Installation
@@ -36,10 +36,11 @@ Adresse : `https://votre-site.fr/inscription/admin.php` (mot de passe, connexion
 En haut de page : le résultat du [test de protection](#zone-privée), les liens **English · Français** et **Se déconnecter**.
 Puis, pour chaque formulaire :
 
-- titre, nom du fichier, étiquette **diffusé** ou **non diffusé — accès par lien**, langues s'il est multilingue ;
+- titre, nom du fichier, étiquette **diffusé**, **non diffusé — accès par lien** ou **accès personnel**, langues s'il est multilingue ;
 - nombre de réponses (et de places), état : ouvert, pas encore ouvert, clos, complet ;
 - **lien de partage** avec boutons **Copier** et **Ouvrir** — c'est le lien à envoyer pour un formulaire non diffusé
-  (voir [Diffusion et lien de partage](formulaires.md#diffusion-et-lien-de-partage)) ;
+  (voir [Diffusion et lien de partage](formulaires.md#diffusion-et-lien-de-partage)) ; pour un formulaire à accès restreint,
+  il est remplacé par la rubrique **Gérer les accès** (voir [Accès personnels](#accès-personnels)) ;
 - **Télécharger** le fichier de réponses (`.csv`), **Voir** les réponses dans un tableau, **Télécharger le descripteur (.ini)** ;
 - **Supprimer le formulaire**, **Supprimer les réponses** (voir [Gérer les formulaires](#gérer-les-formulaires)).
 
@@ -62,7 +63,8 @@ Format des fichiers :
   Excel (version française), LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) (tableur libre et gratuit) ;
   dans LibreOffice, choisissez « UTF-8 » et « point-virgule » si la question est posée ;
 - colonnes : `numero` (numéro de réponse aléatoire, ex. `K7QF-M2ZD`, aussi montré au répondant), `date` (date et heure d'envoi),
-  `langue` (formulaires multilingues seulement : langue du répondant), puis un champ par colonne, dans l'ordre du descripteur ;
+  `langue` (formulaires multilingues seulement : langue du répondant), `acces` et `acces_nom` (formulaires à accès restreint :
+  identifiant et nom de l'accès qui a répondu), puis un champ par colonne, dans l'ordre du descripteur ;
 - les réponses commençant par `=`, `+`, `-` ou `@` sont précédées d'une apostrophe, pour qu'Excel ne les exécute pas comme formules.
 
 Fichiers `<fichier>-ancien-AAAAMMJJ-HHMMSS.csv` : anciennes réponses mises de côté quand les champs d'un formulaire ont changé
@@ -97,6 +99,29 @@ Garde-fous :
 
 Avec `'admin_gestion' => false`, `admin.php` ne sert plus qu'à consulter et télécharger : les boutons d'ajout et de suppression disparaissent.
 
+## Accès personnels
+
+Pour un formulaire déclaré `acces = personnel` ou `acces = lien` (voir [Accès restreint](formulaires.md#accès-restreint)),
+la fiche du formulaire dans `admin.php` affiche le nombre d'accès et de réponses, et une rubrique **Gérer les accès** :
+
+1. **Créer** : coller une liste de noms ou d'adresses (un par ligne), ou indiquer un nombre d'accès sans nom (500 au plus à la fois),
+   puis **Créer les accès**.
+2. **Distribuer** : la page affiche alors, **une seule fois**, chaque identifiant avec son mot de passe et son lien personnel,
+   et un bouton **Télécharger la liste (CSV)** (`identifiant;nom;mot_de_passe;lien`, ou `identifiant;nom;lien` en mode `lien`).
+   Ce fichier sert au publipostage (LibreOffice, Thunderbird…) ou à l'impression. Les mots de passe et les jetons des liens
+   ne sont conservés que sous forme d'empreinte : ils ne pourront plus être affichés.
+3. **Suivre** : le tableau des accès indique pour chacun son nom, son état (actif, révoqué, bloqué après trop d'essais)
+   et la date de sa réponse et de sa dernière modification.
+4. **Agir** sur un accès :
+   - **Révoquer** : l'accès ne permet plus d'ouvrir le formulaire (sa réponse éventuelle est conservée) ; **Réactiver** l'annule
+     et débloque un accès bloqué ;
+   - **Nouveau mot de passe** / **Nouveau lien** : en cas de perte ou de fuite ; l'ancien cesse aussitôt de fonctionner
+     et le nouveau s'affiche une fois, comme à la création.
+
+Les accès sont enregistrés dans `prive/donnees/acces/<fichier>.csv` (identifiant, nom, empreinte, état, dates, essais manqués),
+dans la zone privée. Ils restent en place si le formulaire est remplacé ; ils sont liés au nom du fichier de réponses
+(clé `fichier`). Ces actions demandent `'admin_gestion' => true`.
+
 ## Zone privée
 
 Les réponses contiennent des données personnelles : personne ne doit pouvoir lire
@@ -104,7 +129,7 @@ Les réponses contiennent des données personnelles : personne ne doit pouvoir l
 
 ### a) Par défaut : .htaccess (Apache)
 
-Les dossiers `prive/`, `prive/donnees/`, `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
+Les dossiers `prive/`, `prive/donnees/` (et `donnees/acces/`), `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
 tout accès web. Cela fonctionne chez la plupart des hébergeurs mutualisés (serveurs Apache ou compatibles).
 
 **Vérification** : connectez-vous à `admin.php`, un test automatique s'affiche en haut de la page :
@@ -200,6 +225,10 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 - Écriture sous verrou (`flock`) : deux réponses simultanées ne se mélangent pas, et la limite de places est respectée.
 - Échappement de tout l'affichage HTML ; neutralisation des formules Excel dans le CSV.
 - Formulaires non diffusés : introuvables sans la clé de partage (réponse identique à un formulaire inexistant).
+- Accès restreint : identifiants aléatoires (40 bits), mots de passe de 10 caractères (≈ 57 bits) ou jetons de lien de 24 caractères,
+  stockés uniquement sous forme d'empreinte (`password_hash`, SHA-256) ; pause d'une seconde par échec et blocage 15 minutes
+  après 10 échecs ; connexion par cookie signé (2 heures, invalidé par un changement de mot de passe) ; une seule réponse
+  par accès, vérifiée sous le même verrou que l'écriture.
 - Administration : mot de passe haché, essais ralentis, jeton sur chaque action, fichiers téléversés vérifiés avant installation.
 - Une clé secrète est créée automatiquement dans `donnees/.secret` au premier usage ; la supprimer invalide les
   formulaires ouverts, déconnecte l'administration et **change les liens de partage** des formulaires non diffusés.
@@ -218,3 +247,7 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | accents incorrects dans Excel | ouvrir via *Données* → *À partir d'un fichier texte/CSV*, encodage UTF-8 |
 | pas de courriel de notification | `mail()` désactivé chez l'hébergeur, ou `expediteur` hors de votre domaine |
 | une modification par FTP ne s'affiche pas | attendre quelques secondes (cache PHP de l'hébergeur) puis recharger |
+| un lien personnel répond « Page introuvable » | lien mal copié (identifiant ou jeton tronqué) ; en mode `lien`, lien renouvelé depuis (« Nouveau lien ») |
+| « Cet accès n'est plus valable » | accès révoqué : **Réactiver** dans `admin.php` |
+| « Trop d'essais » | 10 mots de passe faux : attendre 15 minutes, ou **Réactiver** l'accès dans `admin.php` |
+| mot de passe perdu | **Nouveau mot de passe** sur la ligne de l'accès, puis le transmettre à la personne |

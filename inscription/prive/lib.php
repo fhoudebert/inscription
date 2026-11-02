@@ -14,7 +14,12 @@ if (!defined('INS_PRIVE')) {
 
 const INS_COLONNES_FIXES = ['numero', 'date'];
 // Noms interdits pour les champs (colonnes ajoutées automatiquement)
-const INS_NOMS_RESERVES = ['numero', 'date', 'langue'];
+const INS_NOMS_RESERVES = ['numero', 'date', 'langue', 'acces', 'acces_nom'];
+// Colonnes du fichier des accès personnels (prive/donnees/acces/<fichier>.csv)
+const INS_COLONNES_ACCES = ['identifiant', 'nom', 'type', 'secret', 'etat', 'cree', 'repondu', 'modifie', 'echecs', 'bloque'];
+const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage temporaire
+const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
+const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
 const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton'];
 const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
@@ -43,6 +48,7 @@ const INS_CLES_FORMULAIRE = [
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
     'langue' => ['langue', 'language'], 'langues' => ['langues', 'languages'], 'cache' => ['cache', 'hidden'],
+    'acces' => ['acces', 'accès', 'access'], 'modifiable' => ['modifiable', 'editable'],
 ];
 const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
@@ -350,6 +356,16 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         }
     }
 
+    // Accès restreint : « personnel » (lien + mot de passe) ou « lien » (lien personnel seul)
+    $acces = ins_minuscules((string)$lit('acces'));
+    $modesAcces = ['' => '', 'libre' => '', 'open' => '', 'non' => '',
+        'personnel' => 'personnel', 'personal' => 'personnel', 'mot_de_passe' => 'personnel', 'password' => 'personnel',
+        'lien' => 'lien', 'link' => 'lien'];
+    if (!array_key_exists($acces, $modesAcces)) {
+        throw new RuntimeException(t('err_acces_mode', ['f' => $f, 'valeur' => $acces]));
+    }
+    $acces = $modesAcces[$acces];
+
     $diffusion = $lit('diffusion', null);
     $form = [
         'id'              => $id,
@@ -363,7 +379,9 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         'places'          => max(0, (int)$lit('places', 0)),
         'notifier'        => trim((string)$lit('notifier')),
         // diffusion = oui par défaut ; l'ancienne clé « cache = oui » vaut diffusion = non
-        'diffusion'       => $diffusion !== null ? ins_oui($diffusion) : !ins_oui($lit('cache')),
+        'diffusion'       => $acces === '' && ($diffusion !== null ? ins_oui($diffusion) : !ins_oui($lit('cache'))),
+        'acces'           => $acces,
+        'modifiable'      => $acces !== '' && ins_oui($lit('modifiable', 'oui')),
         'afficher_numero' => ins_oui($lit('afficher_numero', 'oui')),
         'langue'          => $base,
         'langues'         => $langues,
@@ -604,6 +622,10 @@ function ins_colonnes(array $form): array
     if (ins_multilingue($form)) {
         $cols[] = 'langue';
     }
+    if ($form['acces'] !== '') {
+        $cols[] = 'acces';
+        $cols[] = 'acces_nom';
+    }
     foreach ($form['champs'] as $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
             $cols[] = $c['nom'];
@@ -633,6 +655,9 @@ function ins_acces_autorise(array $form, $cle): bool
     if ($form['diffusion']) {
         return true;
     }
+    if ($form['acces'] !== '') {
+        return false; // accès restreint : uniquement par les liens personnels
+    }
     return is_string($cle) && $cle !== '' && hash_equals(ins_cle_partage($form['id']), $cle);
 }
 
@@ -645,7 +670,7 @@ function ins_url_formulaire(array $form, ?string $langue = null): string
 function ins_params_formulaire(array $form, ?string $langue = null): array
 {
     $q = ['f' => $form['id']];
-    if (!$form['diffusion']) {
+    if (!$form['diffusion'] && $form['acces'] === '') {
         $q['k'] = ins_cle_partage($form['id']);
     }
     if ($langue !== null && ins_multilingue($form)) {
@@ -659,7 +684,7 @@ function ins_params_formulaire(array $form, ?string $langue = null): array
 /* ------------------------------------------------------------------ */
 
 /** @return string '' si ouvert, sinon le message à afficher */
-function ins_etat(array $form): string
+function ins_etat(array $form, bool $modification = false): string
 {
     $t = time();
     if ($form['ouverture'] !== null && $t < $form['ouverture']) {
@@ -668,7 +693,7 @@ function ins_etat(array $form): string
     if ($form['fermeture'] !== null && $t > $form['fermeture']) {
         return t('etat_clos');
     }
-    if ($form['places'] > 0 && ins_nombre_inscrits($form) >= $form['places']) {
+    if (!$modification && $form['places'] > 0 && ins_nombre_inscrits($form) >= $form['places']) {
         return t('etat_complet');
     }
     return '';
@@ -886,22 +911,76 @@ function ins_nouveau_numero(): string
     return $s;
 }
 
+/** Verrou commun à toutes les écritures (réponses et accès). */
+function ins_verrouiller()
+{
+    $dir = ins_dossier_donnees();
+    $verrou = @fopen($dir . '/.verrou', 'c');
+    if (!$verrou || !flock($verrou, LOCK_EX)) {
+        throw new RuntimeException(t('err_verrou', ['dossier' => $dir]));
+    }
+    return $verrou;
+}
+
+function ins_deverrouiller($verrou): void
+{
+    flock($verrou, LOCK_UN);
+    fclose($verrou);
+}
+
+/** Réécrit entièrement un fichier CSV (fichier temporaire puis renommage : jamais de fichier à moitié écrit). */
+function ins_ecrire_csv(string $fichier, array $lignes): void
+{
+    $sep = (string)ins_config()['separateur'];
+    $tmp = $fichier . '.tmp-' . bin2hex(random_bytes(4));
+    $h = @fopen($tmp, 'wb');
+    if (!$h) {
+        throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
+    }
+    fwrite($h, "\xEF\xBB\xBF");
+    foreach ($lignes as $l) {
+        fputcsv($h, $l, $sep, '"', '');
+    }
+    fclose($h);
+    if (!@rename($tmp, $fichier)) {
+        @unlink($tmp);
+        throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
+    }
+}
+
+/** Retire l'apostrophe ajoutée par ins_csv_sur() (pour réafficher une réponse enregistrée). */
+function ins_csv_brut(string $s): string
+{
+    return (strlen($s) > 1 && $s[0] === "'" && strpos("=+-@\t\r", $s[1]) !== false) ? substr($s, 1) : $s;
+}
+
 /**
- * Ajoute une réponse au fichier CSV (sous verrou).
+ * Ajoute une réponse au fichier CSV (sous verrou). Pour un formulaire à accès restreint, $acces
+ * (ligne du fichier des accès) identifie le répondant : sa réponse précédente est remplacée.
  * @return array{0: ?string, 1: array<string,string>, 2: string} numéro, erreurs, message global
  */
-function ins_enregistrer(array $form, array $valeurs, string $langue = ''): array
+function ins_enregistrer(array $form, array $valeurs, string $langue = '', ?array $acces = null): array
 {
     $dir = ins_dossier_donnees();
     $fichier = ins_fichier_donnees($form);
     $cols = ins_colonnes($form);
     $sep = (string)ins_config()['separateur'];
 
-    $verrou = @fopen($dir . '/.verrou', 'c');
-    if (!$verrou || !flock($verrou, LOCK_EX)) {
-        throw new RuntimeException(t('err_verrou', ['dossier' => $dir]));
-    }
+    $verrou = ins_verrouiller();
     try {
+        // Accès restreint : relire l'accès sous verrou (révoqué entre-temps ? déjà répondu ?)
+        $tousAcces = [];
+        if ($form['acces'] !== '') {
+            $tousAcces = ins_lire_acces($form);
+            $acces = $acces !== null ? ($tousAcces[$acces['identifiant']] ?? null) : null;
+            if ($acces === null || $acces['etat'] !== 'actif') {
+                return [null, [], t('acces_revoque')];
+            }
+            if ($acces['repondu'] !== '' && !$form['modifiable']) {
+                return [null, [], t('acces_deja_repondu')];
+            }
+        }
+
         $lignes = is_file($fichier) ? ins_lire_csv($fichier) : [];
 
         // Si les champs du formulaire ont changé, l'ancien fichier est mis de côté.
@@ -911,11 +990,23 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
         }
         $existantes = array_slice($lignes, 1);
 
-        if ($form['places'] > 0 && count($existantes) >= $form['places']) {
+        // Réponse précédente de cet accès (modification)
+        $index = null;
+        if ($acces !== null) {
+            $ia = array_search('acces', $cols, true);
+            foreach ($existantes as $k => $l) {
+                if (($l[$ia] ?? '') === $acces['identifiant']) {
+                    $index = $k;
+                    break;
+                }
+            }
+        }
+
+        if ($index === null && $form['places'] > 0 && count($existantes) >= $form['places']) {
             return [null, [], t('etat_complet')];
         }
 
-        // Champs « unique = oui » : refus des doublons (casse ignorée)
+        // Champs « unique = oui » : refus des doublons (casse ignorée), hors réponse modifiée
         $erreurs = [];
         foreach ($form['champs'] as $nom => $c) {
             if (!$c['unique'] || ($valeurs[$nom] ?? '') === '') {
@@ -923,8 +1014,8 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
             }
             $i = array_search($nom, $cols, true);
             $cherche = ins_minuscules(ins_csv_sur($valeurs[$nom]));
-            foreach ($existantes as $l) {
-                if (ins_minuscules((string)($l[$i] ?? '')) === $cherche) {
+            foreach ($existantes as $k => $l) {
+                if ($k !== $index && ins_minuscules((string)($l[$i] ?? '')) === $cherche) {
                     $erreurs[$nom] = t('v_deja_utilise');
                     break;
                 }
@@ -934,13 +1025,17 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
             return [null, $erreurs, ''];
         }
 
-        $pris = [];
-        foreach ($existantes as $l) {
-            $pris[$l[0] ?? ''] = true;
+        if ($index !== null) {
+            $numero = (string)$existantes[$index][0];
+        } else {
+            $pris = [];
+            foreach ($existantes as $l) {
+                $pris[$l[0] ?? ''] = true;
+            }
+            do {
+                $numero = ins_nouveau_numero();
+            } while (isset($pris[$numero]));
         }
-        do {
-            $numero = ins_nouveau_numero();
-        } while (isset($pris[$numero]));
 
         $ligne = [];
         foreach ($cols as $nom) {
@@ -950,32 +1045,299 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
                 $ligne[] = date('Y-m-d H:i:s');
             } elseif ($nom === 'langue') {
                 $ligne[] = $langue !== '' ? $langue : $form['langue'];
+            } elseif ($nom === 'acces') {
+                $ligne[] = $acces['identifiant'] ?? '';
+            } elseif ($nom === 'acces_nom') {
+                $ligne[] = ins_csv_sur($acces['nom'] ?? '');
             } else {
                 $ligne[] = ins_csv_sur((string)($valeurs[$nom] ?? ''));
             }
         }
 
-        $nouveau = !is_file($fichier) || filesize($fichier) === 0;
-        $h = @fopen($fichier, 'ab');
-        if (!$h) {
-            throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
+        if ($index !== null) {
+            $existantes[$index] = $ligne;
+            ins_ecrire_csv($fichier, array_merge([$cols], $existantes));
+        } else {
+            $nouveau = !is_file($fichier) || filesize($fichier) === 0;
+            $h = @fopen($fichier, 'ab');
+            if (!$h) {
+                throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
+            }
+            if ($nouveau) {
+                fwrite($h, "\xEF\xBB\xBF"); // BOM : les tableurs reconnaissent l'UTF-8
+                fputcsv($h, $cols, $sep, '"', '');
+            }
+            fputcsv($h, $ligne, $sep, '"', '');
+            fflush($h);
+            fclose($h);
         }
-        if ($nouveau) {
-            fwrite($h, "\xEF\xBB\xBF"); // BOM : les tableurs reconnaissent l'UTF-8
-            fputcsv($h, $cols, $sep, '"', '');
+
+        if ($acces !== null) {
+            $maintenant = date('Y-m-d H:i:s');
+            if ($acces['repondu'] === '') {
+                $tousAcces[$acces['identifiant']]['repondu'] = $maintenant;
+            } else {
+                $tousAcces[$acces['identifiant']]['modifie'] = $maintenant;
+            }
+            ins_ecrire_acces($form, $tousAcces);
         }
-        fputcsv($h, $ligne, $sep, '"', '');
-        fflush($h);
-        fclose($h);
         return [$numero, [], ''];
     } finally {
-        flock($verrou, LOCK_UN);
-        fclose($verrou);
+        ins_deverrouiller($verrou);
     }
 }
 
+/** Réponse enregistrée pour un accès (valeurs par nom de champ), ou null. */
+function ins_reponse_acces(array $form, string $identifiant): ?array
+{
+    $fichier = ins_fichier_donnees($form);
+    if (!is_file($fichier)) {
+        return null;
+    }
+    $lignes = ins_lire_csv($fichier);
+    $cols = $lignes[0] ?? [];
+    $ia = array_search('acces', $cols, true);
+    if ($ia === false) {
+        return null;
+    }
+    foreach (array_slice($lignes, 1) as $l) {
+        if (($l[$ia] ?? '') === $identifiant) {
+            $res = [];
+            foreach ($cols as $k => $nom) {
+                $res[$nom] = ins_csv_brut((string)($l[$k] ?? ''));
+            }
+            return $res;
+        }
+    }
+    return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Accès personnels (formulaires à diffusion restreinte)              */
+/* ------------------------------------------------------------------ */
+
+function ins_fichier_acces(array $form): string
+{
+    $dir = ins_dossier_donnees() . '/acces';
+    ins_preparer_dossier($dir);
+    return $dir . '/' . $form['fichier'] . '.csv';
+}
+
+/** @return array<string,array> accès indexés par identifiant */
+function ins_lire_acces(array $form): array
+{
+    $f = ins_fichier_acces($form);
+    $res = [];
+    if (!is_file($f)) {
+        return $res;
+    }
+    foreach (array_slice(ins_lire_csv($f), 1) as $l) {
+        $a = [];
+        foreach (INS_COLONNES_ACCES as $k => $nom) {
+            $a[$nom] = (string)($l[$k] ?? '');
+        }
+        if ($a['identifiant'] !== '') {
+            $a['nom'] = ins_csv_brut($a['nom']);
+            $res[$a['identifiant']] = $a;
+        }
+    }
+    return $res;
+}
+
+/** À appeler sous verrou. */
+function ins_ecrire_acces(array $form, array $acces): void
+{
+    $lignes = [INS_COLONNES_ACCES];
+    foreach ($acces as $a) {
+        $l = [];
+        foreach (INS_COLONNES_ACCES as $nom) {
+            $l[] = $nom === 'nom' ? ins_csv_sur((string)$a[$nom]) : (string)$a[$nom];
+        }
+        $lignes[] = $l;
+    }
+    ins_ecrire_csv(ins_fichier_acces($form), $lignes);
+}
+
+function ins_aleatoire(int $n): string
+{
+    $alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O, 1/l/I
+    $s = '';
+    for ($i = 0; $i < $n; $i++) {
+        $s .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+    return $s;
+}
+
+/** Nouveau secret d'un accès : [secret en clair, empreinte à stocker]. */
+function ins_nouveau_secret(string $type): array
+{
+    if ($type === 'lien') {
+        $clair = ins_aleatoire(24);
+        return [$clair, 'sha256:' . hash('sha256', $clair)];
+    }
+    $clair = ins_aleatoire(10);
+    return [$clair, password_hash($clair, PASSWORD_DEFAULT)];
+}
+
+/**
+ * Crée des accès pour une liste de noms (un accès par nom ; noms vides = accès anonymes).
+ * @return array<int,array{identifiant:string,nom:string,secret:string}> secrets EN CLAIR, à communiquer une seule fois
+ */
+function ins_creer_acces(array $form, array $noms): array
+{
+    $type = $form['acces'] === 'lien' ? 'lien' : 'mdp';
+    $verrou = ins_verrouiller();
+    try {
+        $tous = ins_lire_acces($form);
+        $crees = [];
+        foreach ($noms as $nom) {
+            do {
+                $id = ins_nouveau_numero();
+            } while (isset($tous[$id]));
+            [$clair, $empreinte] = ins_nouveau_secret($type);
+            $tous[$id] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'type' => $type, 'secret' => $empreinte,
+                'etat' => 'actif', 'cree' => date('Y-m-d H:i:s'), 'repondu' => '', 'modifie' => '', 'echecs' => '0', 'bloque' => ''];
+            $crees[] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'secret' => $clair];
+        }
+        ins_ecrire_acces($form, $tous);
+        return $crees;
+    } finally {
+        ins_deverrouiller($verrou);
+    }
+}
+
+/**
+ * Modifie un accès : « revoquer », « reactiver » ou « renouveler » (nouveau secret, renvoyé en clair).
+ * @return string|null nouveau secret en clair pour « renouveler »
+ */
+function ins_modifier_acces(array $form, string $id, string $action): ?string
+{
+    $verrou = ins_verrouiller();
+    try {
+        $tous = ins_lire_acces($form);
+        if (!isset($tous[$id])) {
+            throw new RuntimeException(t('introuvable'));
+        }
+        $clair = null;
+        if ($action === 'revoquer') {
+            $tous[$id]['etat'] = 'revoque';
+        } elseif ($action === 'reactiver') {
+            $tous[$id]['etat'] = 'actif';
+            $tous[$id]['echecs'] = '0';
+            $tous[$id]['bloque'] = '';
+        } elseif ($action === 'renouveler') {
+            $type = $form['acces'] === 'lien' ? 'lien' : 'mdp';
+            [$clair, $empreinte] = ins_nouveau_secret($type);
+            $tous[$id]['type'] = $type;
+            $tous[$id]['secret'] = $empreinte;
+            $tous[$id]['echecs'] = '0';
+            $tous[$id]['bloque'] = '';
+        } else {
+            throw new RuntimeException(t('introuvable'));
+        }
+        ins_ecrire_acces($form, $tous);
+        return $clair;
+    } finally {
+        ins_deverrouiller($verrou);
+    }
+}
+
+/** Accès en mode « lien seul » : identifiant + jeton du lien. */
+function ins_verifier_lien(array $form, string $id, $jeton): ?array
+{
+    $a = ins_lire_acces($form)[$id] ?? null;
+    if ($a === null || $a['type'] !== 'lien' || !is_string($jeton) || $jeton === '') {
+        return null;
+    }
+    return hash_equals($a['secret'], 'sha256:' . hash('sha256', $jeton)) ? $a : null;
+}
+
+/**
+ * Accès en mode « lien + mot de passe » : vérifie le mot de passe, compte les échecs, bloque après trop d'essais.
+ * @return array{0: ?array, 1: string} accès, code d'erreur ('' si succès)
+ */
+function ins_verifier_mot_de_passe(array $form, string $id, string $mdp): array
+{
+    $verrou = ins_verrouiller();
+    try {
+        $tous = ins_lire_acces($form);
+        $a = $tous[$id] ?? null;
+        if ($a === null || $a['type'] !== 'mdp') {
+            password_verify($mdp, password_hash('-', PASSWORD_DEFAULT)); // même durée qu'un vrai essai
+            return [null, 'acces_mdp_incorrect'];
+        }
+        if ($a['bloque'] !== '' && (int)$a['bloque'] > time()) {
+            return [null, 'acces_bloque'];
+        }
+        if (!password_verify($mdp, $a['secret'])) {
+            $echecs = (int)$a['echecs'] + 1;
+            $tous[$id]['echecs'] = (string)$echecs;
+            if ($echecs >= INS_ACCES_ECHECS_MAX) {
+                $tous[$id]['echecs'] = '0';
+                $tous[$id]['bloque'] = (string)(time() + INS_ACCES_BLOCAGE);
+            }
+            ins_ecrire_acces($form, $tous);
+            return [null, $echecs >= INS_ACCES_ECHECS_MAX ? 'acces_bloque' : 'acces_mdp_incorrect'];
+        }
+        if ($a['echecs'] !== '0' || $a['bloque'] !== '') {
+            $tous[$id]['echecs'] = '0';
+            $tous[$id]['bloque'] = '';
+            ins_ecrire_acces($form, $tous);
+        }
+        return [$tous[$id], ''];
+    } finally {
+        ins_deverrouiller($verrou);
+    }
+}
+
+/** Nom du cookie de connexion d'un formulaire à mot de passe. */
+function ins_cookie_acces(string $fid): string
+{
+    return 'ins_acces_' . substr(hash('sha256', $fid), 0, 12);
+}
+
+/** Valeur du cookie : identifiant.expiration.signature (la signature dépend du mot de passe actuel). */
+function ins_jeton_acces(string $fid, array $a): string
+{
+    $exp = time() + INS_ACCES_DUREE;
+    return $a['identifiant'] . '.' . $exp . '.' . ins_signer("acces|$fid|{$a['identifiant']}|$exp|" . substr($a['secret'], -16));
+}
+
+/** Accès connecté par cookie (mode « lien + mot de passe »), ou null. */
+function ins_acces_par_cookie(array $form, string $id): ?array
+{
+    $v = $_COOKIE[ins_cookie_acces($form['id'])] ?? '';
+    if (!is_string($v) || !preg_match('/^([A-Z0-9]{4}-[A-Z0-9]{4})\.(\d+)\.([0-9a-f]{32})$/', $v, $m) || $m[1] !== $id || (int)$m[2] < time()) {
+        return null;
+    }
+    $a = ins_lire_acces($form)[$id] ?? null;
+    if ($a === null || $a['type'] !== 'mdp') {
+        return null;
+    }
+    return hash_equals(ins_signer("acces|{$form['id']}|$id|{$m[2]}|" . substr($a['secret'], -16)), $m[3]) ? $a : null;
+}
+
+/** Adresse de base du formulaire public (https://site/dossier/index.php). */
+function ins_url_base(): string
+{
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    $hote = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $chemin = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/index.php'))), '/');
+    return ($https ? 'https' : 'http') . '://' . $hote . $chemin . '/index.php';
+}
+
+/** Lien personnel d'un accès (avec le jeton pour le mode « lien seul »). */
+function ins_lien_acces(array $form, string $id, ?string $jeton = null): string
+{
+    $q = ['f' => $form['id'], 'i' => $id];
+    if ($jeton !== null && $form['acces'] === 'lien') {
+        $q['t'] = $jeton;
+    }
+    return ins_url_base() . '?' . http_build_query($q);
+}
+
 /** Envoi facultatif d'un courriel au gestionnaire (« notifier = » dans le descripteur). */
-function ins_notifier(array $form, string $numero, array $valeurs): void
+function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces = null): void
 {
     if ($form['notifier'] === '' || !function_exists('mail')) {
         return;
@@ -986,7 +1348,11 @@ function ins_notifier(array $form, string $numero, array $valeurs): void
     if (!$dest) {
         return;
     }
-    $corps = t('mail_corps', ['numero' => $numero, 'titre' => $form['titre']]) . "\n\n";
+    $corps = t('mail_corps', ['numero' => $numero, 'titre' => $form['titre']]) . "\n";
+    if ($acces !== null) {
+        $corps .= t('mail_acces', ['id' => $acces['identifiant'], 'nom' => $acces['nom']]) . "\n";
+    }
+    $corps .= "\n";
     foreach ($form['champs'] as $nom => $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
             $corps .= $c['libelle'] . ' : ' . ($valeurs[$nom] ?? '') . "\n";
@@ -1100,6 +1466,9 @@ th,td{border:1px solid var(--bord);padding:.3rem .5rem;text-align:left;vertical-
 th{background:#e9eef3;position:sticky;top:0}
 .defile{overflow:auto;max-height:75vh}
 .petit{font-size:.88rem;color:#57606a}
+td code{white-space:nowrap}
+td.actions form{display:block;margin:.15rem 0}
+td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
 @media (max-width:30rem){.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
 CSS;

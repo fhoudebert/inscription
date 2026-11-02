@@ -1,0 +1,1442 @@
+From 06ed3d1d43ef3b5fdc71a8eae75f2b8758b6877a Mon Sep 17 00:00:00 2001
+From: fhoudebert <fhoudebert@free.fr>
+Date: Mon, 2 Nov 2026 10:43:14 +0000
+Subject: [PATCH] =?UTF-8?q?Formulaires=20=C3=A0=20acc=C3=A8s=20restreint?=
+ =?UTF-8?q?=20:=20acc=C3=A8s=20personnels=20(lien=20+=20mot=20de=20passe,?=
+ =?UTF-8?q?=20ou=20lien=20seul)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- clé « acces = personnel | lien » (access = personal | link) : formulaire
+  jamais listé, ouvert seulement par un lien personnel index.php?f=…&i=<id>
+  (+ mot de passe, ou &t=<jeton> en mode lien seul) ; sinon 404
+- une seule réponse par accès ; « modifiable = oui » (défaut) : réponse
+  pré-remplie au retour et remplacée (même numéro) ; places non décomptées
+- colonnes acces / acces_nom dans le fichier des réponses
+- accès stockés dans prive/donnees/acces/<fichier>.csv : empreintes
+  seulement (password_hash / SHA-256), état, dates, essais manqués
+- connexion par cookie signé 2 h (invalidé par changement de mot de
+  passe), déconnexion ; pause 1 s par échec, blocage 15 min après 10
+- admin : rubrique « Gérer les accès » (création depuis une liste de noms
+  ou un nombre, secrets affichés une seule fois + CSV pour publipostage,
+  suivi des réponses, révoquer / réactiver / débloquer, nouveau mot de
+  passe ou nouveau lien) ; jeton anti-CSRF sur chaque action
+- verrou et écriture atomique communs (ins_verrouiller, ins_ecrire_csv)
+- traductions fr/en, exemple ag-membres.ini, documentation mise à jour
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017DiD4qMrwHuxJhnMmt7JaX
+---
+ README.md                                    |  12 +-
+ docs/administration.md                       |  43 +-
+ docs/formulaires.md                          |  40 +-
+ inscription/admin.php                        | 159 ++++++-
+ inscription/index.php                        | 115 ++++-
+ inscription/prive/formulaires/ag-membres.ini |  49 +++
+ inscription/prive/lang/en.php                |  50 +++
+ inscription/prive/lang/fr.php                |  50 +++
+ inscription/prive/lib.php                    | 439 +++++++++++++++++--
+ 9 files changed, 891 insertions(+), 66 deletions(-)
+ create mode 100644 inscription/prive/formulaires/ag-membres.ini
+
+diff --git a/README.md b/README.md
+index 02f0a64..966c1f3 100644
+--- a/README.md
++++ b/README.md
+@@ -5,9 +5,11 @@ sans base de données ni programmation :
+ 
+ - chaque formulaire est **décrit dans un fichier texte** (`.ini`) ;
+ - les réponses s'ajoutent à un **fichier CSV** qui s'ouvre dans Excel, LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) ;
+-- un formulaire est **diffusé** (listé sur la page d'accueil) ou **non diffusé** (ouvert seulement par un lien de partage) ;
++- un formulaire est **diffusé** (listé sur la page d'accueil), **non diffusé** (ouvert seulement par un lien de partage)
++  ou à **accès restreint** : chaque personne invitée reçoit un lien personnel (et un mot de passe), répond une fois
++  et peut modifier sa réponse — les robots et les inconnus ne peuvent rien envoyer ;
+ - une **page d'administration** protégée par mot de passe permet de télécharger les réponses, copier les liens de partage,
+-  ajouter ou supprimer des formulaires ;
++  créer les accès personnels, ajouter ou supprimer des formulaires ;
+ - l'interface est en **français et en anglais**, et un formulaire peut être **multilingue** (langue du navigateur, changement par un lien).
+ 
+ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune session PHP, aucune base MySQL.
+@@ -16,8 +18,8 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
+ 
+ | page | contenu |
+ |------|---------|
+-| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, formulaires multilingues, exemples |
+-| **[Administration](docs/administration.md)** | page `admin.php`, récupération des réponses, gestion des formulaires, zone privée, réglages, sécurité, dépannage, langues de l'interface |
++| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, accès restreint, formulaires multilingues, exemples |
++| **[Administration](docs/administration.md)** | page `admin.php`, récupération des réponses, gestion des formulaires, accès personnels, zone privée, réglages, sécurité, dépannage, langues de l'interface |
+ 
+ ## Installation en bref
+ 
+@@ -70,7 +72,7 @@ Déposé sous `prive/formulaires/reunion.ini` (par FTP ou depuis `admin.php`), i
+ `index.php?f=reunion` ; les réponses arrivent dans `prive/donnees/reunion.csv`.
+ 
+ Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),
+-`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais).
++`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe).
+ Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
+ 
+ ## Données personnelles
+diff --git a/docs/administration.md b/docs/administration.md
+index 7e686cb..240e1f7 100644
+--- a/docs/administration.md
++++ b/docs/administration.md
+@@ -3,7 +3,7 @@
+ [← Retour au README](../README.md) · [Créer un formulaire](formulaires.md)
+ 
+ Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Récupérer les réponses](#récupérer-les-réponses) ·
+-[Gérer les formulaires](#gérer-les-formulaires) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
++[Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
+ [Langues de l'interface](#langues-de-linterface) · [Sécurité](#sécurité) · [Dépannage](#dépannage)
+ 
+ ## Installation
+@@ -36,10 +36,11 @@ Adresse : `https://votre-site.fr/inscription/admin.php` (mot de passe, connexion
+ En haut de page : le résultat du [test de protection](#zone-privée), les liens **English · Français** et **Se déconnecter**.
+ Puis, pour chaque formulaire :
+ 
+-- titre, nom du fichier, étiquette **diffusé** ou **non diffusé — accès par lien**, langues s'il est multilingue ;
++- titre, nom du fichier, étiquette **diffusé**, **non diffusé — accès par lien** ou **accès personnel**, langues s'il est multilingue ;
+ - nombre de réponses (et de places), état : ouvert, pas encore ouvert, clos, complet ;
+ - **lien de partage** avec boutons **Copier** et **Ouvrir** — c'est le lien à envoyer pour un formulaire non diffusé
+-  (voir [Diffusion et lien de partage](formulaires.md#diffusion-et-lien-de-partage)) ;
++  (voir [Diffusion et lien de partage](formulaires.md#diffusion-et-lien-de-partage)) ; pour un formulaire à accès restreint,
++  il est remplacé par la rubrique **Gérer les accès** (voir [Accès personnels](#accès-personnels)) ;
+ - **Télécharger** le fichier de réponses (`.csv`), **Voir** les réponses dans un tableau, **Télécharger le descripteur (.ini)** ;
+ - **Supprimer le formulaire**, **Supprimer les réponses** (voir [Gérer les formulaires](#gérer-les-formulaires)).
+ 
+@@ -62,7 +63,8 @@ Format des fichiers :
+   Excel (version française), LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) (tableur libre et gratuit) ;
+   dans LibreOffice, choisissez « UTF-8 » et « point-virgule » si la question est posée ;
+ - colonnes : `numero` (numéro de réponse aléatoire, ex. `K7QF-M2ZD`, aussi montré au répondant), `date` (date et heure d'envoi),
+-  `langue` (formulaires multilingues seulement : langue du répondant), puis un champ par colonne, dans l'ordre du descripteur ;
++  `langue` (formulaires multilingues seulement : langue du répondant), `acces` et `acces_nom` (formulaires à accès restreint :
++  identifiant et nom de l'accès qui a répondu), puis un champ par colonne, dans l'ordre du descripteur ;
+ - les réponses commençant par `=`, `+`, `-` ou `@` sont précédées d'une apostrophe, pour qu'Excel ne les exécute pas comme formules.
+ 
+ Fichiers `<fichier>-ancien-AAAAMMJJ-HHMMSS.csv` : anciennes réponses mises de côté quand les champs d'un formulaire ont changé
+@@ -97,6 +99,29 @@ Garde-fous :
+ 
+ Avec `'admin_gestion' => false`, `admin.php` ne sert plus qu'à consulter et télécharger : les boutons d'ajout et de suppression disparaissent.
+ 
++## Accès personnels
++
++Pour un formulaire déclaré `acces = personnel` ou `acces = lien` (voir [Accès restreint](formulaires.md#accès-restreint)),
++la fiche du formulaire dans `admin.php` affiche le nombre d'accès et de réponses, et une rubrique **Gérer les accès** :
++
++1. **Créer** : coller une liste de noms ou d'adresses (un par ligne), ou indiquer un nombre d'accès sans nom (500 au plus à la fois),
++   puis **Créer les accès**.
++2. **Distribuer** : la page affiche alors, **une seule fois**, chaque identifiant avec son mot de passe et son lien personnel,
++   et un bouton **Télécharger la liste (CSV)** (`identifiant;nom;mot_de_passe;lien`, ou `identifiant;nom;lien` en mode `lien`).
++   Ce fichier sert au publipostage (LibreOffice, Thunderbird…) ou à l'impression. Les mots de passe et les jetons des liens
++   ne sont conservés que sous forme d'empreinte : ils ne pourront plus être affichés.
++3. **Suivre** : le tableau des accès indique pour chacun son nom, son état (actif, révoqué, bloqué après trop d'essais)
++   et la date de sa réponse et de sa dernière modification.
++4. **Agir** sur un accès :
++   - **Révoquer** : l'accès ne permet plus d'ouvrir le formulaire (sa réponse éventuelle est conservée) ; **Réactiver** l'annule
++     et débloque un accès bloqué ;
++   - **Nouveau mot de passe** / **Nouveau lien** : en cas de perte ou de fuite ; l'ancien cesse aussitôt de fonctionner
++     et le nouveau s'affiche une fois, comme à la création.
++
++Les accès sont enregistrés dans `prive/donnees/acces/<fichier>.csv` (identifiant, nom, empreinte, état, dates, essais manqués),
++dans la zone privée. Ils restent en place si le formulaire est remplacé ; ils sont liés au nom du fichier de réponses
++(clé `fichier`). Ces actions demandent `'admin_gestion' => true`.
++
+ ## Zone privée
+ 
+ Les réponses contiennent des données personnelles : personne ne doit pouvoir lire
+@@ -104,7 +129,7 @@ Les réponses contiennent des données personnelles : personne ne doit pouvoir l
+ 
+ ### a) Par défaut : .htaccess (Apache)
+ 
+-Les dossiers `prive/`, `prive/donnees/`, `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
++Les dossiers `prive/`, `prive/donnees/` (et `donnees/acces/`), `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
+ tout accès web. Cela fonctionne chez la plupart des hébergeurs mutualisés (serveurs Apache ou compatibles).
+ 
+ **Vérification** : connectez-vous à `admin.php`, un test automatique s'affiche en haut de la page :
+@@ -200,6 +225,10 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
+ - Écriture sous verrou (`flock`) : deux réponses simultanées ne se mélangent pas, et la limite de places est respectée.
+ - Échappement de tout l'affichage HTML ; neutralisation des formules Excel dans le CSV.
+ - Formulaires non diffusés : introuvables sans la clé de partage (réponse identique à un formulaire inexistant).
++- Accès restreint : identifiants aléatoires (40 bits), mots de passe de 10 caractères (≈ 57 bits) ou jetons de lien de 24 caractères,
++  stockés uniquement sous forme d'empreinte (`password_hash`, SHA-256) ; pause d'une seconde par échec et blocage 15 minutes
++  après 10 échecs ; connexion par cookie signé (2 heures, invalidé par un changement de mot de passe) ; une seule réponse
++  par accès, vérifiée sous le même verrou que l'écriture.
+ - Administration : mot de passe haché, essais ralentis, jeton sur chaque action, fichiers téléversés vérifiés avant installation.
+ - Une clé secrète est créée automatiquement dans `donnees/.secret` au premier usage ; la supprimer invalide les
+   formulaires ouverts, déconnecte l'administration et **change les liens de partage** des formulaires non diffusés.
+@@ -218,3 +247,7 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
+ | accents incorrects dans Excel | ouvrir via *Données* → *À partir d'un fichier texte/CSV*, encodage UTF-8 |
+ | pas de courriel de notification | `mail()` désactivé chez l'hébergeur, ou `expediteur` hors de votre domaine |
+ | une modification par FTP ne s'affiche pas | attendre quelques secondes (cache PHP de l'hébergeur) puis recharger |
++| un lien personnel répond « Page introuvable » | lien mal copié (identifiant ou jeton tronqué) ; en mode `lien`, lien renouvelé depuis (« Nouveau lien ») |
++| « Cet accès n'est plus valable » | accès révoqué : **Réactiver** dans `admin.php` |
++| « Trop d'essais » | 10 mots de passe faux : attendre 15 minutes, ou **Réactiver** l'accès dans `admin.php` |
++| mot de passe perdu | **Nouveau mot de passe** sur la ligne de l'accès, puis le transmettre à la personne |
+diff --git a/docs/formulaires.md b/docs/formulaires.md
+index 473a3a8..c625114 100644
+--- a/docs/formulaires.md
++++ b/docs/formulaires.md
+@@ -5,6 +5,7 @@
+ Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
+ [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
+ [Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
++[Accès restreint](#accès-restreint) ·
+ [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
+ [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
+ 
+@@ -24,7 +25,7 @@ il l'affiche directement. Les formulaires non diffusés s'ouvrent par leur [lien
+ 
+ - Une section `[formulaire]` donne les réglages généraux, puis **une section par champ**, dans l'ordre d'affichage.
+ - Le nom de section d'un champ (`[email]`, `[nom_prenom]`…) devient le **nom de la colonne** dans le fichier CSV :
+-  lettres non accentuées, chiffres et `_`, commençant par une lettre. `numero`, `date` et `langue` sont réservés.
++  lettres non accentuées, chiffres et `_`, commençant par une lettre. `numero`, `date`, `langue`, `acces` et `acces_nom` sont réservés.
+ - **Mettez les textes entre guillemets doubles** : `libelle = "Nom de l'association"`.
+   Un guillemet double dans un texte s'écrit `\"`. Un texte entre guillemets peut tenir sur plusieurs lignes.
+ - Une ligne commençant par `;` est un commentaire.
+@@ -47,6 +48,8 @@ Réglages de la section `[formulaire]` :
+ | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
+ | `notifier`  | adresse(s) recevant un courriel à chaque réponse (séparées par des virgules) | — |
+ | `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le [lien de partage](#diffusion-et-lien-de-partage) | oui |
++| `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
++| `modifiable` | accès restreint : `oui` = chaque personne peut revenir modifier sa réponse ; `non` = une réponse définitive | oui |
+ | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
+ | `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
+ | `langues`   | formulaire multilingue : langues proposées, ex. `"fr \| en"` (voir [Formulaire multilingue](#formulaire-multilingue)) | — |
+@@ -162,6 +165,7 @@ obligatoire = oui
+ | `sondage.ini` | questionnaire de satisfaction anonyme, non diffusé |
+ | `colloque.ini` | formulaire bilingue français / anglais |
+ | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
++| `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
+ 
+ ## Diffusion et lien de partage
+ 
+@@ -178,6 +182,39 @@ Supprimer `.secret` change d'un coup les liens de tous les formulaires non diffu
+ 
+ L'ancienne écriture `cache = oui` reste acceptée et équivaut à `diffusion = non`.
+ 
++## Accès restreint
++
++Pour réserver un formulaire à des personnes connues (membres, invités, jury…) et empêcher toute saisie par des robots
++ou des inconnus :
++
++```ini
++[formulaire]
++titre      = "Assemblée générale — réponse des membres"
++acces      = personnel     ; ou : lien
++modifiable = oui           ; défaut
++```
++
++| `acces` | ce que reçoit chaque personne | pour qui |
++|---------|-------------------------------|----------|
++| `personnel` | un **lien personnel** (`index.php?f=ag&i=K7QF-M2ZD`) **et un mot de passe** de 10 caractères | le plus sûr, surtout si le lien et le mot de passe partent par des canaux différents (e-mail + papier, SMS…) |
++| `lien` | un **lien personnel secret** seul (`…&i=K7QF-M2ZD&t=…`) : rien à saisir | le plus simple ; transférer le lien revient à transférer l'accès |
++
++Fonctionnement :
++
++- les accès (un par personne, avec son nom ou son adresse) se créent dans `admin.php`, puis la liste est téléchargée
++  et diffusée **hors de l'application** (publipostage, courrier…) — voir [Accès personnels](administration.md#accès-personnels) ;
++- **une seule réponse par accès**. Avec `modifiable = oui`, la personne qui revient avec son lien (et son mot de passe)
++  retrouve sa réponse pré-remplie et peut la modifier jusqu'à la fermeture : la réponse est **remplacée**, pas ajoutée ;
++  avec `modifiable = non`, elle voit « Vous avez déjà répondu » ;
++- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès) :
++  on sait qui a répondu quoi ;
++- un formulaire à accès restreint n'apparaît **jamais** dans la liste publique, et sans lien valide l'adresse répond « Page introuvable » ;
++- `places` limite le nombre de personnes qui répondent ; une modification ne compte pas comme une nouvelle réponse ;
++- en mode `personnel`, la connexion dure 2 heures (lien « se déconnecter » sur la page) ; après 10 mots de passe faux,
++  l'accès est bloqué 15 minutes.
++
++Exemple complet : `prive/formulaires/ag-membres.ini`.
++
+ ## Formulaire multilingue
+ 
+ ```ini
+@@ -228,6 +265,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
+ | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
+ | `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
+ | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
++| `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
+ | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |
+ | | | | `echelle`, `titre` | `scale`, `heading` |
+ 
+diff --git a/inscription/admin.php b/inscription/admin.php
+index 5f45fe3..06ca1e5 100644
+--- a/inscription/admin.php
++++ b/inscription/admin.php
+@@ -180,6 +180,8 @@ if ($action === 'ini') {
+ $message = '';
+ $alerte = '';
+ $detail = '';
++$nouveauxAcces = null;   // accès qui viennent d'être créés ou renouvelés (secrets affichés une seule fois)
++$ouvrirAcces = '';       // formulaire dont la rubrique « Accès » reste ouverte
+ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+     $act = (string)$_POST['action'];
+     try {
+@@ -265,7 +267,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+             header('Location: admin.php?' . http_build_query(['ok' => 'csv_supprime', 'id' => $n]), true, 303);
+             exit;
+         }
+-        throw new RuntimeException(t('introuvable'));
++        if ($act === 'acces_generer' || $act === 'acces_modifier') {
++            $id = (string)($_POST['id'] ?? '');
++            $formAcces = ins_charger_formulaire($id);
++            if ($formAcces['acces'] === '') {
++                throw new RuntimeException(t('introuvable'));
++            }
++            if ($act === 'acces_generer') {
++                // Un accès par ligne (nom, adresse…), sinon un nombre d'accès sans nom
++                $noms = array_values(array_filter(array_map('trim', preg_split('/\R/', (string)($_POST['noms'] ?? '')) ?: []), 'strlen'));
++                if (!$noms) {
++                    $noms = array_fill(0, max(0, min(500, (int)($_POST['nombre'] ?? 0))), '');
++                }
++                if (!$noms || count($noms) > 500) {
++                    throw new RuntimeException(t('adm_acces_nombre'));
++                }
++                $noms = array_map(function ($n) { return mb_substr($n, 0, 200); }, $noms);
++                $nouveauxAcces = ['form' => $formAcces, 'liste' => ins_creer_acces($formAcces, $noms)];
++            } else {
++                $op = (string)($_POST['op'] ?? '');
++                $aid = (string)($_POST['acces'] ?? '');
++                $clair = ins_modifier_acces($formAcces, $aid, $op);
++                if ($clair !== null) {
++                    $a = ins_lire_acces($formAcces)[$aid];
++                    $nouveauxAcces = ['form' => $formAcces, 'liste' => [['identifiant' => $aid, 'nom' => $a['nom'], 'secret' => $clair]]];
++                } else {
++                    $message = t($op === 'revoquer' ? 'adm_acces_revoque' : 'adm_acces_reactive', ['id' => $aid]);
++                }
++            }
++            $ouvrirAcces = $id;
++        } else {
++            throw new RuntimeException(t('introuvable'));
++        }
+     } catch (Throwable $ex) {
+         $alerte = $ex->getMessage();
+     }
+@@ -293,6 +326,36 @@ function ins_bouton_suppression(string $action, string $champ, string $valeur, s
+         . '<button class="dang">' . e($libelle) . '</button></form></details>';
+ }
+ 
++/** CSV (identifiant, nom, mot de passe, lien) des accès qui viennent d'être créés, en lien de téléchargement. */
++function ins_csv_nouveaux_acces(array $form, array $liste): string
++{
++    $sep = (string)ins_config()['separateur'];
++    $h = fopen('php://temp', 'w+b');
++    fwrite($h, "\xEF\xBB\xBF");
++    $lien = $form['acces'] === 'lien';
++    fputcsv($h, $lien ? ['identifiant', 'nom', 'lien'] : ['identifiant', 'nom', 'mot_de_passe', 'lien'], $sep, '"', '');
++    foreach ($liste as $a) {
++        $url = ins_lien_acces($form, $a['identifiant'], $a['secret']);
++        fputcsv($h, $lien ? [$a['identifiant'], ins_csv_sur($a['nom']), $url] : [$a['identifiant'], ins_csv_sur($a['nom']), $a['secret'], $url], $sep, '"', '');
++    }
++    rewind($h);
++    $csv = (string)stream_get_contents($h);
++    fclose($h);
++    return 'data:text/csv;charset=utf-8;base64,' . base64_encode($csv);
++}
++
++/** Petit bouton POST d'action sur un accès. */
++function ins_bouton_acces(string $fid, string $aid, string $op, string $libelle, string $jeton, string $classe = 'sec'): string
++{
++    return '<form method="post" style="display:inline">'
++        . '<input type="hidden" name="_jeton" value="' . e($jeton) . '">'
++        . '<input type="hidden" name="action" value="acces_modifier">'
++        . '<input type="hidden" name="id" value="' . e($fid) . '">'
++        . '<input type="hidden" name="acces" value="' . e($aid) . '">'
++        . '<input type="hidden" name="op" value="' . e($op) . '">'
++        . '<button class="' . e($classe) . '" style="padding:.2rem .6rem;font-size:.85rem">' . e($libelle) . '</button></form>';
++}
++
+ /* ---------- Affichage d'un fichier de réponses ---------- */
+ if ($action === 'voir') {
+     $n = ins_fichier_demande($dir, $_GET['fichier'] ?? '');
+@@ -324,6 +387,58 @@ if ($action === 'voir') {
+     exit;
+ }
+ 
++/** Rubrique « Accès » d'un formulaire à diffusion restreinte. */
++function ins_rubrique_acces(array $form, bool $gestion, string $jeton, bool $ouverte): string
++{
++    $tous = ins_lire_acces($form);
++    $repondus = count(array_filter($tous, function ($a) { return $a['repondu'] !== ''; }));
++    $actifs = count(array_filter($tous, function ($a) { return $a['etat'] === 'actif'; }));
++    $h = '<div class="petit" style="margin:.4rem 0">' . e(t('adm_acces_resume', ['n' => count($tous), 'actifs' => $actifs, 'repondus' => $repondus]))
++        . (count($tous) === 0 ? ' <b>' . e(t('adm_acces_aucun')) . '</b>' : '') . '</div>';
++    $h .= '<details' . ($ouverte ? ' open' : '') . '><summary>' . e(t('adm_acces_gerer')) . '</summary>';
++    if ($tous) {
++        $h .= '<div class="defile" style="max-height:24rem;margin:.5rem 0"><table><thead><tr><th>' . e(t('acces_identifiant')) . '</th><th>'
++            . e(t('adm_acces_nom')) . '</th><th>' . e(t('adm_acces_etat')) . '</th><th>' . e(t('adm_acces_reponse')) . '</th>'
++            . ($gestion ? '<th></th>' : '') . '</tr></thead><tbody>';
++        foreach ($tous as $a) {
++            if ($a['etat'] !== 'actif') {
++                $etat = t('adm_acces_etat_revoque');
++            } elseif ($a['bloque'] !== '' && (int)$a['bloque'] > time()) {
++                $etat = t('adm_acces_etat_bloque', ['date' => ins_date_lisible((int)$a['bloque'])]);
++            } else {
++                $etat = t('adm_acces_etat_actif');
++            }
++            $rep = $a['repondu'] === '' ? '—' : t('adm_acces_repondu', ['date' => ins_date_lisible((int)strtotime($a['repondu']))])
++                . ($a['modifie'] !== '' ? ' · ' . t('adm_acces_modifie', ['date' => ins_date_lisible((int)strtotime($a['modifie']))]) : '');
++            $h .= '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td><td>' . e($etat) . '</td><td>' . e($rep) . '</td>';
++            if ($gestion) {
++                $bloque = $a['bloque'] !== '' && (int)$a['bloque'] > time();
++                $h .= '<td class="actions">'
++                    . ($a['etat'] === 'actif' ? ins_bouton_acces($form['id'], $a['identifiant'], 'revoquer', t('adm_acces_revoquer'), $jeton, 'dang') : '')
++                    . ($a['etat'] !== 'actif' || $bloque ? ins_bouton_acces($form['id'], $a['identifiant'], 'reactiver', t('adm_acces_reactiver'), $jeton) : '')
++                    . ' ' . ins_bouton_acces($form['id'], $a['identifiant'], 'renouveler',
++                        t($form['acces'] === 'lien' ? 'adm_acces_nouveau_lien' : 'adm_acces_nouveau_mdp'), $jeton)
++                    . '</td>';
++            }
++            $h .= '</tr>';
++        }
++        $h .= '</tbody></table></div>';
++    }
++    if ($gestion) {
++        $h .= '<form method="post" class="champ">'
++            . '<input type="hidden" name="_jeton" value="' . e($jeton) . '">'
++            . '<input type="hidden" name="action" value="acces_generer">'
++            . '<input type="hidden" name="id" value="' . e($form['id']) . '">'
++            . '<label class="lib" for="noms_' . e($form['id']) . '">' . e(t('adm_acces_noms')) . '</label>'
++            . '<textarea id="noms_' . e($form['id']) . '" name="noms" placeholder="' . e(t('adm_acces_noms_exemple')) . '"></textarea>'
++            . '<label class="lib" for="nb_' . e($form['id']) . '" style="margin-top:.6rem">' . e(t('adm_acces_ou_nombre')) . '</label>'
++            . '<input type="number" id="nb_' . e($form['id']) . '" name="nombre" min="1" max="500" style="max-width:8rem">'
++            . '<p class="petit">' . e(t($form['acces'] === 'lien' ? 'adm_acces_aide_lien' : 'adm_acces_aide')) . '</p>'
++            . '<button>' . e(t('adm_acces_generer')) . '</button></form>';
++    }
++    return $h . '</details>';
++}
++
+ /* ---------- Tableau de bord ---------- */
+ ins_entete(t('adm_titre_long'));
+ $langs = strip_tags(ins_choix_langue(), '<a><b>');
+@@ -335,6 +450,22 @@ if ($message !== '') {
+ if ($alerte !== '') {
+     echo '<div class="alerte">' . e($alerte) . ($detail !== '' ? '<br><b>' . e($detail) . '</b>' : '') . '</div>';
+ }
++if ($nouveauxAcces !== null) {
++    $fa = $nouveauxAcces['form'];
++    $modeLien = $fa['acces'] === 'lien';
++    echo '<div class="ok"><b>' . e(t('adm_acces_crees', ['n' => count($nouveauxAcces['liste']), 'titre' => $fa['titre']])) . '</b>'
++        . '<p>' . e(t($modeLien ? 'adm_acces_une_fois_lien' : 'adm_acces_une_fois')) . '</p>'
++        . '<p><a class="btn" download="acces-' . e($fa['id']) . '-' . date('Ymd-His') . '.csv" href="'
++        . e(ins_csv_nouveaux_acces($fa, $nouveauxAcces['liste'])) . '">' . e(t('adm_acces_telecharger')) . '</a></p>'
++        . '<div class="defile" style="max-height:20rem"><table><thead><tr><th>' . e(t('acces_identifiant')) . '</th><th>' . e(t('adm_acces_nom')) . '</th>'
++        . ($modeLien ? '' : '<th>' . e(t('acces_mot_de_passe')) . '</th>') . '<th>' . e(t('adm_acces_lien')) . '</th></tr></thead><tbody>';
++    foreach ($nouveauxAcces['liste'] as $a) {
++        echo '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td>'
++            . ($modeLien ? '' : '<td><code>' . e($a['secret']) . '</code></td>')
++            . '<td style="word-break:break-all">' . e(ins_lien_acces($fa, $a['identifiant'], $a['secret'])) . '</td></tr>';
++    }
++    echo '</tbody></table></div></div>';
++}
+ 
+ // Auto-test : la zone privée est-elle lisible depuis le web ?
+ $urlPublique = ins_url_si_public($dir);
+@@ -385,21 +516,29 @@ foreach ($formulaires as $id => $form) {
+     $nb = ins_nombre_inscrits($form);
+     $etat = ins_etat($form);
+     $lien = ins_url_absolue($form);
+-    echo '<b>' . e($form['titre']) . '</b> <span class="petit">(' . e($id) . '.ini)</span> '
+-        . ($form['diffusion']
+-            ? '<span class="etiq">' . e(t('adm_diffuse')) . '</span>'
+-            : '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>') . '<br>';
++    if ($form['acces'] !== '') {
++        $etiquette = '<span class="etiq prive">' . e(t($form['acces'] === 'lien' ? 'adm_acces_lien_seul' : 'adm_acces_personnel')) . '</span>';
++    } elseif ($form['diffusion']) {
++        $etiquette = '<span class="etiq">' . e(t('adm_diffuse')) . '</span>';
++    } else {
++        $etiquette = '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>';
++    }
++    echo '<b>' . e($form['titre']) . '</b> <span class="petit">(' . e($id) . '.ini)</span> ' . $etiquette . '<br>';
+     echo e(t('adm_nb_reponses', ['n' => $nb])) . ($form['places'] ? ' / ' . e(t('adm_places', ['n' => $form['places']])) : '');
+     echo ' · ' . ($etat === '' ? e(t('adm_ouvert')) : e($etat));
+     if (ins_multilingue($form)) {
+         $noms = array_map(function ($lg) { return ins_textes($lg)['nom_langue'] ?? $lg; }, $form['langues']);
+         echo ' · ' . e(t('adm_langues', ['langues' => implode(', ', $noms)]));
+     }
+-    echo '<div class="lien"><input type="text" readonly value="' . e($lien) . '" aria-label="' . e(t('adm_lien_partage')) . '">'
+-        . '<button type="button" class="sec copier">' . e(t('adm_copier')) . '</button>'
+-        . '<a class="btn sec" href="' . e($lien) . '" target="_blank" rel="noopener">' . e(t('adm_ouvrir')) . '</a></div>';
+-    if (!$form['diffusion']) {
+-        echo '<div class="petit">' . e(t('adm_lien_explication')) . '</div>';
++    if ($form['acces'] !== '') {
++        echo ins_rubrique_acces($form, $gestion, $jetonAdmin, $ouvrirAcces === $id);
++    } else {
++        echo '<div class="lien"><input type="text" readonly value="' . e($lien) . '" aria-label="' . e(t('adm_lien_partage')) . '">'
++            . '<button type="button" class="sec copier">' . e(t('adm_copier')) . '</button>'
++            . '<a class="btn sec" href="' . e($lien) . '" target="_blank" rel="noopener">' . e(t('adm_ouvrir')) . '</a></div>';
++        if (!$form['diffusion']) {
++            echo '<div class="petit">' . e(t('adm_lien_explication')) . '</div>';
++        }
+     }
+     if ($nb > 0 || is_file($dir . '/' . $n)) {
+         echo '<a class="btn" href="?a=telecharger&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_telecharger')) . ' ' . e($n) . '</a> '
+diff --git a/inscription/index.php b/inscription/index.php
+index 88369eb..234a1a2 100644
+--- a/inscription/index.php
++++ b/inscription/index.php
+@@ -4,6 +4,8 @@
+  *   index.php                  → liste des formulaires diffusés (ou le formulaire, s'il n'y en a qu'un)
+  *   index.php?f=<nom>          → formulaire diffusé décrit par formulaires/<nom>.ini
+  *   index.php?f=<nom>&k=<clé>  → formulaire non diffusé, ouvert par son lien de partage
++ *   index.php?f=<nom>&i=<id>   → formulaire à accès restreint, lien personnel (+ mot de passe,
++ *                                ou &t=<jeton> pour le mode « lien seul »)
+  *   &lang=en                   → choix de la langue (page d'accueil, formulaires multilingues)
+  */
+ declare(strict_types=1);
+@@ -77,8 +79,17 @@ try {
+     $existe = ins_id_valide($fid) && is_file(ins_dossier_formulaires() . '/' . $fid . '.ini');
+     ins_erreur_page(404, t($existe ? 'introuvable_ou_errone' : 'introuvable'), $ex->getMessage());
+ }
+-// Non diffusé et sans clé de partage valide : on ne révèle pas son existence.
+-if (!ins_acces_autorise($form, $cle)) {
++// Accès restreint : il faut un lien personnel (identifiant, + jeton en mode « lien seul »).
++$paramsAcces = [];
++if ($form['acces'] !== '') {
++    $aid = isset($_GET['i']) && is_string($_GET['i']) ? strtoupper(trim($_GET['i'])) : '';
++    $jetonLien = isset($_GET['t']) && is_string($_GET['t']) ? $_GET['t'] : '';
++    if (!preg_match('/^[A-Z0-9]{4}-[A-Z0-9]{4}$/', $aid)) {
++        ins_erreur_page(404, t('introuvable'));
++    }
++    $paramsAcces = ['i' => $aid] + ($form['acces'] === 'lien' ? ['t' => $jetonLien] : []);
++} elseif (!ins_acces_autorise($form, $cle)) {
++    // Non diffusé et sans clé de partage valide : on ne révèle pas son existence.
+     ins_erreur_page(404, t('introuvable'));
+ }
+ // Langue d'affichage : fixe pour un formulaire unilingue ; pour un formulaire multilingue,
+@@ -87,8 +98,71 @@ $formBase = $form;
+ $lg = ins_multilingue($form) ? ins_langue_visiteur($form['langues'], $form['langue']) : $form['langue'];
+ ins_langue($lg);
+ $form = ins_localiser($form, $lg);
+-$url = ins_url_formulaire($form, $lg);
+-$liensLangues = ins_liens_langues($form['langues'], $lg, ins_params_formulaire($form));
++$url = '?' . http_build_query(ins_params_formulaire($form, $lg) + $paramsAcces);
++$liensLangues = ins_liens_langues($form['langues'], $lg, ins_params_formulaire($form) + $paramsAcces);
++
++/* ---------- Accès restreint : vérification ---------- */
++$acces = null;
++$reponseExistante = null;
++if ($form['acces'] !== '') {
++    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
++    $cookieAcces = ins_cookie_acces($fid);
++    if ($form['acces'] === 'lien') {
++        $acces = ins_verifier_lien($form, $aid, $jetonLien);
++        if ($acces === null) {
++            ins_erreur_page(404, t('introuvable'));
++        }
++    } else {
++        if (isset($_GET['sortir'])) {
++            setcookie($cookieAcces, '', ['expires' => time() - 3600, 'path' => '/', 'httponly' => true, 'secure' => $https, 'samesite' => 'Lax']);
++            header('Location: ' . $url, true, 303);
++            exit;
++        }
++        if (!isset(ins_lire_acces($form)[$aid])) {
++            ins_erreur_page(404, t('introuvable')); // identifiant inconnu : on ne révèle rien
++        }
++        $acces = ins_acces_par_cookie($form, $aid);
++        if ($acces === null) {
++            $erreurConnexion = '';
++            if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_mdp']) && ($_POST['site_web'] ?? '') === '') {
++                [$a, $code] = ins_verifier_mot_de_passe($form, $aid, is_string($_POST['_mdp']) ? $_POST['_mdp'] : '');
++                if ($a !== null) {
++                    setcookie($cookieAcces, ins_jeton_acces($fid, $a), ['expires' => time() + INS_ACCES_DUREE, 'path' => '/',
++                        'httponly' => true, 'secure' => $https, 'samesite' => 'Lax']);
++                    header('Location: ' . $url, true, 303);
++                    exit;
++                }
++                sleep(1); // freine les essais en série
++                $erreurConnexion = t($code, ['minutes' => (int)(INS_ACCES_BLOCAGE / 60)]);
++            }
++            ins_entete($form['titre']);
++            echo $liensLangues;
++            echo '<h1>' . e($form['titre']) . '</h1>';
++            echo '<div class="info">' . e(t('acces_connexion_intro')) . '</div>';
++            if ($erreurConnexion !== '') {
++                echo '<div class="alerte" role="alert">' . e($erreurConnexion) . '</div>';
++            }
++            echo '<form method="post" action="' . e($url) . '" class="champ">'
++                . '<div class="pot" aria-hidden="true"><input type="text" name="site_web" tabindex="-1" autocomplete="off"></div>'
++                . '<label class="lib" for="ident">' . e(t('acces_identifiant')) . '</label>'
++                . '<input type="text" id="ident" value="' . e($aid) . '" readonly autocomplete="username">'
++                . '<label class="lib" for="mdp" style="margin-top:.6rem">' . e(t('acces_mot_de_passe')) . '</label>'
++                . '<input type="password" id="mdp" name="_mdp" autocomplete="current-password" autofocus required>'
++                . '<p><button>' . e(t('acces_entrer')) . '</button></p></form>';
++            ins_pied();
++            exit;
++        }
++    }
++    if ($acces['etat'] !== 'actif') {
++        ins_erreur_page(403, t('acces_revoque'));
++    }
++    if ($acces['repondu'] !== '') {
++        $reponseExistante = ins_reponse_acces($form, $aid);
++        if (!$form['modifiable'] && !isset($_GET['merci'])) {
++            ins_erreur_page(200, t('acces_deja_repondu'));
++        }
++    }
++}
+ 
+ $brut = [];
+ $erreurs = [];
+@@ -102,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+         exit;
+     }
+     [$valeurs, $erreurs, $brut] = ins_valider($form, $_POST);
+-    $etat = ins_etat($form);
++    $etat = ins_etat($form, $reponseExistante !== null);
+     if ($etat !== '') {
+         $alerte = $etat;
+     } elseif ($motif === 'trop_rapide') {
+@@ -111,13 +185,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+         $alerte = t('page_expiree');
+     } elseif (!$erreurs) {
+         try {
+-            [$numero, $erreurs, $alerte] = ins_enregistrer($form, $valeurs, $lg);
++            [$numero, $erreurs, $alerte] = ins_enregistrer($form, $valeurs, $lg, $acces);
+         } catch (Throwable $ex) {
+             error_log('inscription : ' . $ex->getMessage());
+             ins_erreur_page(500, t('echec_enregistrement'), $ex->getMessage());
+         }
+         if ($numero !== null) {
+-            ins_notifier($formBase, $numero, $valeurs); // libellés dans la langue de base
++            ins_notifier($formBase, $numero, $valeurs, $acces); // libellés dans la langue de base
+             $sig = ins_signer("merci|$fid|$numero");
+             header('Location: ' . $url . '&merci=' . rawurlencode($numero) . '&s=' . $sig, true, 303);
+             exit;
+@@ -141,19 +215,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {
+         echo '<p>' . e(t('numero_reponse')) . ' <code>' . e($numero) . '</code><br>'
+             . '<span class="petit">' . e(t('numero_conserver')) . '</span></p>';
+     }
+-    echo '</div><p><a class="btn sec" href="' . e($url) . '">' . e(t('autre_reponse')) . '</a></p>';
++    echo '</div>';
++    if ($acces === null) {
++        echo '<p><a class="btn sec" href="' . e($url) . '">' . e(t('autre_reponse')) . '</a></p>';
++    } elseif ($form['modifiable']) {
++        echo '<p><a class="btn sec" href="' . e($url) . '">' . e(t('acces_modifier')) . '</a></p>'
++            . '<p class="petit">' . e(t($form['acces'] === 'lien' ? 'acces_modifier_lien' : 'acces_modifier_mdp')) . '</p>';
++    }
+     ins_pied();
+     exit;
+ }
+ 
+ /* ---------- Formulaire fermé ? ---------- */
+-$etat = ins_etat($form);
++$etat = ins_etat($form, $reponseExistante !== null);
+ if ($etat !== '' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+     echo '<div class="info">' . e($etat) . '</div>';
+     ins_pied();
+     exit;
+ }
+ 
++if ($acces !== null) {
++    $qui = $acces['nom'] !== '' ? $acces['nom'] . ' (' . $acces['identifiant'] . ')' : $acces['identifiant'];
++    echo '<p class="petit">' . e(t('acces_connecte', ['qui' => $qui]));
++    if ($form['acces'] === 'personnel') {
++        echo ' · <a href="' . e($url . '&sortir=1') . '">' . e(t('acces_sortir')) . '</a>';
++    }
++    echo '</p>';
++    if ($reponseExistante !== null) {
++        echo '<div class="ok">' . e(t('acces_deja_modifiable', ['date' => ins_date_lisible((int)strtotime($acces['modifie'] ?: $acces['repondu']))])) . '</div>';
++    }
++}
+ if ($form['intro'] !== '') {
+     echo '<div class="info">' . nl2br(e($form['intro'])) . '</div>';
+ }
+@@ -178,7 +269,11 @@ foreach ($form['champs'] as $nom => $c) {
+         continue;
+     }
+ 
+-    $b = $premier ? ($c['defaut'] !== '' ? $c['defaut'] : null) : ($brut[$nom] ?? null);
++    if ($premier && $reponseExistante !== null) {
++        $b = $reponseExistante[$nom] ?? null; // modification : réponse précédente
++    } else {
++        $b = $premier ? ($c['defaut'] !== '' ? $c['defaut'] : null) : ($brut[$nom] ?? null);
++    }
+     $err = $erreurs[$nom] ?? '';
+     $idh = 'c_' . $nom;
+     $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
+diff --git a/inscription/prive/formulaires/ag-membres.ini b/inscription/prive/formulaires/ag-membres.ini
+new file mode 100644
+index 0000000..1b21624
+--- /dev/null
++++ b/inscription/prive/formulaires/ag-membres.ini
+@@ -0,0 +1,49 @@
++; =====================================================================
++; Exemple de formulaire à ACCÈS RESTREINT : réponse des membres à la
++; convocation de l'assemblée générale.
++;
++; - acces = personnel : chaque membre reçoit un lien personnel ET un mot de passe ;
++;   acces = lien      : chaque membre reçoit seulement un lien personnel secret.
++; - les accès se créent dans admin.php (rubrique « Gérer les accès » de ce formulaire),
++;   à partir d'une liste de noms ou d'adresses ; la liste (identifiants, mots de passe, liens)
++;   se télécharge en CSV pour être diffusée hors de l'application (publipostage, courrier…).
++; - une seule réponse par accès ; avec modifiable = oui (défaut), le membre peut revenir
++;   modifier sa réponse jusqu'à la fermeture.
++; - le fichier des réponses contient l'identifiant et le nom de l'accès (colonnes acces, acces_nom).
++; - un formulaire à accès restreint n'apparaît jamais dans la liste publique.
++; =====================================================================
++
++[formulaire]
++titre      = "Assemblée générale du 14 février 2027 — réponse des membres"
++intro      = "Merci de nous indiquer votre présence avant le 7 février. Vous pourrez modifier votre réponse jusqu'à cette date."
++acces      = personnel
++modifiable = oui
++fermeture  = "2027-02-07"
++merci      = "Merci, votre réponse est enregistrée."
++bouton     = "Enregistrer ma réponse"
++
++[presence]
++type        = choix
++libelle     = "Serez-vous présent(e) ?"
++options     = "Oui | Non, je donne pouvoir | Non"
++obligatoire = oui
++
++[mandataire]
++type        = texte
++libelle     = "Nom du membre à qui vous donnez pouvoir"
++obligatoire = oui
++si          = "presence = Non, je donne pouvoir"
++
++[repas]
++type    = case
++libelle = "Je participe au repas qui suit l'assemblée"
++si      = "presence = Oui"
++
++[candidature]
++type    = case
++libelle = "Je suis candidat(e) au conseil d'administration"
++
++[questions]
++type    = texte_long
++libelle = "Questions à inscrire à l'ordre du jour"
++max     = 1500
+diff --git a/inscription/prive/lang/en.php b/inscription/prive/lang/en.php
+index 6b56bbd..fd7c38b 100644
+--- a/inscription/prive/lang/en.php
++++ b/inscription/prive/lang/en.php
+@@ -32,6 +32,23 @@ return [
+     'etat_clos'           => 'This form is closed.',
+     'etat_complet'        => 'Sorry, all places have been taken.',
+ 
++    /* ---- Restricted access (respondent side) ---- */
++    'acces_connexion_intro' => 'This form is reserved for invited people. Enter the password you received with your link.',
++    'acces_identifiant'   => 'Identifier',
++    'acces_mot_de_passe'  => 'Password',
++    'acces_entrer'        => 'Open the form',
++    'acces_mdp_incorrect' => 'Wrong identifier or password.',
++    'acces_bloque'        => 'Too many attempts: this access is locked for {minutes} minutes.',
++    'acces_revoque'       => 'This access is no longer valid. Please contact the organiser.',
++    'acces_deja_repondu'  => 'You have already answered this form.',
++    'acces_connecte'      => 'Personal access: {qui}',
++    'acces_sortir'        => 'log out',
++    'acces_deja_modifiable' => 'You already answered (on {date}). Your answer is shown below: you can change it and submit it again.',
++    'acces_modifier'      => 'Change my answer',
++    'acces_modifier_lien' => 'You can change your answer later with the same personal link.',
++    'acces_modifier_mdp'  => 'You can change your answer later with your personal link and password.',
++    'mail_acces'          => 'Access: {id} {nom}',
++
+     /* ---- Input checks ---- */
+     'v_obligatoire'       => 'This field is required.',
+     'v_case_obligatoire'  => 'This box must be ticked.',
+@@ -71,6 +88,7 @@ return [
+     'err_condition_option' => '{f}: [{nom}] tests "{valeur}", which is not an option of [{cible}]',
+     'err_langue'          => '{f}: language "{langue}" not available (file prive/lang/{langue}.php missing)',
+     'err_options_trad'    => '{f}: [{nom}] options_{langue} must have as many choices as options ({n})',
++    'err_acces_mode'      => '{f}: unknown "access = {valeur}" (possible values: personal, link)',
+     'err_aucun_champ'     => '{f} does not describe any field to fill in',
+     'err_dossier'         => 'Folder not found and cannot be created: {dossier}',
+     'err_ecriture'        => 'Cannot write {fichier} (write permissions?)',
+@@ -140,4 +158,36 @@ return [
+     'adm_ok_archive'      => 'The fields have changed: the current answers file will be archived at the next answer and a new file will start.',
+     'adm_autres_fichiers' => 'Other files (previous versions, deleted forms)',
+     'adm_format_csv'      => 'CSV files in UTF-8, separator "{sep}": they open directly in Excel, LibreOffice Calc or GridCraft.',
++    /* ---- Administration: personal access ---- */
++    'adm_acces_personnel' => 'personal access — link + password',
++    'adm_acces_lien_seul' => 'personal access — link only',
++    'adm_acces_resume'    => 'Access: {n} ({actifs} active), {repondus} answer(s) received.',
++    'adm_acces_aucun'     => 'No access created: nobody can answer yet.',
++    'adm_acces_gerer'     => 'Manage access',
++    'adm_acces_nom'       => 'Name',
++    'adm_acces_lien'      => 'Personal link',
++    'adm_acces_etat'      => 'Status',
++    'adm_acces_reponse'   => 'Answer',
++    'adm_acces_etat_actif' => 'active',
++    'adm_acces_etat_revoque' => 'revoked',
++    'adm_acces_etat_bloque' => 'locked until {date}',
++    'adm_acces_repondu'   => 'on {date}',
++    'adm_acces_modifie'   => 'changed on {date}',
++    'adm_acces_revoquer'  => 'Revoke',
++    'adm_acces_reactiver' => 'Reactivate',
++    'adm_acces_nouveau_mdp' => 'New password',
++    'adm_acces_nouveau_lien' => 'New link',
++    'adm_acces_noms'      => 'Create access: one name or address per line',
++    'adm_acces_noms_exemple' => "Mary Smith\njohn.brown@example.org",
++    'adm_acces_ou_nombre' => 'or number of unnamed accesses',
++    'adm_acces_aide'      => 'Each access gets an identifier, a password and a personal link. Passwords are only shown once, right after creation: download the list to distribute it (mail merge, printing…).',
++    'adm_acces_aide_lien' => 'Each access gets a secret personal link. Links are only shown once, right after creation: download the list to distribute it (mail merge…).',
++    'adm_acces_generer'   => 'Create the accesses',
++    'adm_acces_nombre'    => 'Give at least one name, or a number of accesses (500 at most at a time).',
++    'adm_acces_crees'     => '{n} access(es) created or renewed for "{titre}".',
++    'adm_acces_une_fois'  => 'Write them down now: passwords are only stored encrypted and cannot be displayed again. If lost, use "New password".',
++    'adm_acces_une_fois_lien' => 'Write them down now: links are only stored encrypted and cannot be displayed again. If lost, use "New link".',
++    'adm_acces_telecharger' => 'Download the list (CSV)',
++    'adm_acces_revoque'   => 'Access {id} revoked.',
++    'adm_acces_reactive'  => 'Access {id} reactivated.',
+ ];
+diff --git a/inscription/prive/lang/fr.php b/inscription/prive/lang/fr.php
+index cc9876d..576abee 100644
+--- a/inscription/prive/lang/fr.php
++++ b/inscription/prive/lang/fr.php
+@@ -32,6 +32,23 @@ return [
+     'etat_clos'           => 'Ce formulaire est clos.',
+     'etat_complet'        => 'Désolé, toutes les places ont été prises.',
+ 
++    /* ---- Accès restreint (côté répondant) ---- */
++    'acces_connexion_intro' => 'Ce formulaire est réservé aux personnes invitées. Saisissez le mot de passe reçu avec votre lien.',
++    'acces_identifiant'   => 'Identifiant',
++    'acces_mot_de_passe'  => 'Mot de passe',
++    'acces_entrer'        => 'Accéder au formulaire',
++    'acces_mdp_incorrect' => 'Identifiant ou mot de passe incorrect.',
++    'acces_bloque'        => 'Trop d\'essais : cet accès est bloqué pendant {minutes} minutes.',
++    'acces_revoque'       => 'Cet accès n\'est plus valable. Contactez l\'organisateur.',
++    'acces_deja_repondu'  => 'Vous avez déjà répondu à ce formulaire.',
++    'acces_connecte'      => 'Accès personnel : {qui}',
++    'acces_sortir'        => 'se déconnecter',
++    'acces_deja_modifiable' => 'Vous avez déjà répondu (le {date}). Votre réponse est affichée ci-dessous : vous pouvez la modifier et l\'envoyer à nouveau.',
++    'acces_modifier'      => 'Modifier ma réponse',
++    'acces_modifier_lien' => 'Vous pourrez modifier votre réponse plus tard avec le même lien personnel.',
++    'acces_modifier_mdp'  => 'Vous pourrez modifier votre réponse plus tard avec votre lien personnel et votre mot de passe.',
++    'mail_acces'          => 'Accès : {id} {nom}',
++
+     /* ---- Vérification des saisies ---- */
+     'v_obligatoire'       => 'Ce champ est obligatoire.',
+     'v_case_obligatoire'  => 'Cette case doit être cochée.',
+@@ -71,6 +88,7 @@ return [
+     'err_condition_option' => "{f} : [{nom}] teste « {valeur} », qui n'est pas une option de [{cible}]",
+     'err_langue'          => '{f} : langue « {langue} » non disponible (fichier prive/lang/{langue}.php absent)',
+     'err_options_trad'    => '{f} : [{nom}] options_{langue} doit compter autant de choix que options ({n})',
++    'err_acces_mode'      => '{f} : « acces = {valeur} » inconnu (valeurs possibles : personnel, lien)',
+     'err_aucun_champ'     => '{f} ne décrit aucun champ à remplir',
+     'err_dossier'         => 'Dossier introuvable et impossible à créer : {dossier}',
+     'err_ecriture'        => "Impossible d'écrire {fichier} (droits d'écriture ?)",
+@@ -140,4 +158,36 @@ return [
+     'adm_ok_archive'      => 'Les champs ont changé : le fichier des réponses actuel sera archivé à la prochaine réponse et un nouveau fichier démarrera.',
+     'adm_autres_fichiers' => 'Autres fichiers (anciennes versions, formulaires supprimés)',
+     'adm_format_csv'      => "Fichiers CSV en UTF-8, séparateur « {sep} » : ils s'ouvrent directement dans Excel, LibreOffice Calc ou GridCraft.",
++    /* ---- Administration : accès personnels ---- */
++    'adm_acces_personnel' => 'accès personnel — lien + mot de passe',
++    'adm_acces_lien_seul' => 'accès personnel — lien seul',
++    'adm_acces_resume'    => 'Accès : {n} ({actifs} actifs), {repondus} réponse(s) reçue(s).',
++    'adm_acces_aucun'     => 'Aucun accès créé : personne ne peut encore répondre.',
++    'adm_acces_gerer'     => 'Gérer les accès',
++    'adm_acces_nom'       => 'Nom',
++    'adm_acces_lien'      => 'Lien personnel',
++    'adm_acces_etat'      => 'État',
++    'adm_acces_reponse'   => 'Réponse',
++    'adm_acces_etat_actif' => 'actif',
++    'adm_acces_etat_revoque' => 'révoqué',
++    'adm_acces_etat_bloque' => 'bloqué jusqu\'au {date}',
++    'adm_acces_repondu'   => 'le {date}',
++    'adm_acces_modifie'   => 'modifiée le {date}',
++    'adm_acces_revoquer'  => 'Révoquer',
++    'adm_acces_reactiver' => 'Réactiver',
++    'adm_acces_nouveau_mdp' => 'Nouveau mot de passe',
++    'adm_acces_nouveau_lien' => 'Nouveau lien',
++    'adm_acces_noms'      => 'Créer des accès : un nom ou une adresse par ligne',
++    'adm_acces_noms_exemple' => "Marie Durand\njean.martin@exemple.fr",
++    'adm_acces_ou_nombre' => 'ou nombre d\'accès sans nom',
++    'adm_acces_aide'      => 'Chaque accès reçoit un identifiant, un mot de passe et un lien personnel. Les mots de passe ne sont affichés qu\'une fois, juste après la création : téléchargez la liste pour la diffuser (publipostage, impression…).',
++    'adm_acces_aide_lien' => 'Chaque accès reçoit un lien personnel secret. Les liens ne sont affichés qu\'une fois, juste après la création : téléchargez la liste pour la diffuser (publipostage…).',
++    'adm_acces_generer'   => 'Créer les accès',
++    'adm_acces_nombre'    => 'Indiquez au moins un nom, ou un nombre d\'accès (500 au plus à la fois).',
++    'adm_acces_crees'     => '{n} accès créé(s) ou renouvelé(s) pour « {titre} ».',
++    'adm_acces_une_fois'  => 'Notez-les maintenant : les mots de passe ne sont conservés que sous forme chiffrée et ne pourront plus être affichés. En cas de perte, utilisez « Nouveau mot de passe ».',
++    'adm_acces_une_fois_lien' => 'Notez-les maintenant : les liens ne sont conservés que sous forme chiffrée et ne pourront plus être affichés. En cas de perte, utilisez « Nouveau lien ».',
++    'adm_acces_telecharger' => 'Télécharger la liste (CSV)',
++    'adm_acces_revoque'   => 'Accès {id} révoqué.',
++    'adm_acces_reactive'  => 'Accès {id} réactivé.',
+ ];
+diff --git a/inscription/prive/lib.php b/inscription/prive/lib.php
+index 48ac7f4..f7d1f8f 100644
+--- a/inscription/prive/lib.php
++++ b/inscription/prive/lib.php
+@@ -14,7 +14,12 @@ if (!defined('INS_PRIVE')) {
+ 
+ const INS_COLONNES_FIXES = ['numero', 'date'];
+ // Noms interdits pour les champs (colonnes ajoutées automatiquement)
+-const INS_NOMS_RESERVES = ['numero', 'date', 'langue'];
++const INS_NOMS_RESERVES = ['numero', 'date', 'langue', 'acces', 'acces_nom'];
++// Colonnes du fichier des accès personnels (prive/donnees/acces/<fichier>.csv)
++const INS_COLONNES_ACCES = ['identifiant', 'nom', 'type', 'secret', 'etat', 'cree', 'repondu', 'modifie', 'echecs', 'bloque'];
++const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage temporaire
++const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
++const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
+ // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
+ const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton'];
+ const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
+@@ -43,6 +48,7 @@ const INS_CLES_FORMULAIRE = [
+     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
+     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
+     'langue' => ['langue', 'language'], 'langues' => ['langues', 'languages'], 'cache' => ['cache', 'hidden'],
++    'acces' => ['acces', 'accès', 'access'], 'modifiable' => ['modifiable', 'editable'],
+ ];
+ const INS_CLES_CHAMP = [
+     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
+@@ -350,6 +356,16 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
+         }
+     }
+ 
++    // Accès restreint : « personnel » (lien + mot de passe) ou « lien » (lien personnel seul)
++    $acces = ins_minuscules((string)$lit('acces'));
++    $modesAcces = ['' => '', 'libre' => '', 'open' => '', 'non' => '',
++        'personnel' => 'personnel', 'personal' => 'personnel', 'mot_de_passe' => 'personnel', 'password' => 'personnel',
++        'lien' => 'lien', 'link' => 'lien'];
++    if (!array_key_exists($acces, $modesAcces)) {
++        throw new RuntimeException(t('err_acces_mode', ['f' => $f, 'valeur' => $acces]));
++    }
++    $acces = $modesAcces[$acces];
++
+     $diffusion = $lit('diffusion', null);
+     $form = [
+         'id'              => $id,
+@@ -363,7 +379,9 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
+         'places'          => max(0, (int)$lit('places', 0)),
+         'notifier'        => trim((string)$lit('notifier')),
+         // diffusion = oui par défaut ; l'ancienne clé « cache = oui » vaut diffusion = non
+-        'diffusion'       => $diffusion !== null ? ins_oui($diffusion) : !ins_oui($lit('cache')),
++        'diffusion'       => $acces === '' && ($diffusion !== null ? ins_oui($diffusion) : !ins_oui($lit('cache'))),
++        'acces'           => $acces,
++        'modifiable'      => $acces !== '' && ins_oui($lit('modifiable', 'oui')),
+         'afficher_numero' => ins_oui($lit('afficher_numero', 'oui')),
+         'langue'          => $base,
+         'langues'         => $langues,
+@@ -604,6 +622,10 @@ function ins_colonnes(array $form): array
+     if (ins_multilingue($form)) {
+         $cols[] = 'langue';
+     }
++    if ($form['acces'] !== '') {
++        $cols[] = 'acces';
++        $cols[] = 'acces_nom';
++    }
+     foreach ($form['champs'] as $c) {
+         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
+             $cols[] = $c['nom'];
+@@ -633,6 +655,9 @@ function ins_acces_autorise(array $form, $cle): bool
+     if ($form['diffusion']) {
+         return true;
+     }
++    if ($form['acces'] !== '') {
++        return false; // accès restreint : uniquement par les liens personnels
++    }
+     return is_string($cle) && $cle !== '' && hash_equals(ins_cle_partage($form['id']), $cle);
+ }
+ 
+@@ -645,7 +670,7 @@ function ins_url_formulaire(array $form, ?string $langue = null): string
+ function ins_params_formulaire(array $form, ?string $langue = null): array
+ {
+     $q = ['f' => $form['id']];
+-    if (!$form['diffusion']) {
++    if (!$form['diffusion'] && $form['acces'] === '') {
+         $q['k'] = ins_cle_partage($form['id']);
+     }
+     if ($langue !== null && ins_multilingue($form)) {
+@@ -659,7 +684,7 @@ function ins_params_formulaire(array $form, ?string $langue = null): array
+ /* ------------------------------------------------------------------ */
+ 
+ /** @return string '' si ouvert, sinon le message à afficher */
+-function ins_etat(array $form): string
++function ins_etat(array $form, bool $modification = false): string
+ {
+     $t = time();
+     if ($form['ouverture'] !== null && $t < $form['ouverture']) {
+@@ -668,7 +693,7 @@ function ins_etat(array $form): string
+     if ($form['fermeture'] !== null && $t > $form['fermeture']) {
+         return t('etat_clos');
+     }
+-    if ($form['places'] > 0 && ins_nombre_inscrits($form) >= $form['places']) {
++    if (!$modification && $form['places'] > 0 && ins_nombre_inscrits($form) >= $form['places']) {
+         return t('etat_complet');
+     }
+     return '';
+@@ -886,22 +911,76 @@ function ins_nouveau_numero(): string
+     return $s;
+ }
+ 
++/** Verrou commun à toutes les écritures (réponses et accès). */
++function ins_verrouiller()
++{
++    $dir = ins_dossier_donnees();
++    $verrou = @fopen($dir . '/.verrou', 'c');
++    if (!$verrou || !flock($verrou, LOCK_EX)) {
++        throw new RuntimeException(t('err_verrou', ['dossier' => $dir]));
++    }
++    return $verrou;
++}
++
++function ins_deverrouiller($verrou): void
++{
++    flock($verrou, LOCK_UN);
++    fclose($verrou);
++}
++
++/** Réécrit entièrement un fichier CSV (fichier temporaire puis renommage : jamais de fichier à moitié écrit). */
++function ins_ecrire_csv(string $fichier, array $lignes): void
++{
++    $sep = (string)ins_config()['separateur'];
++    $tmp = $fichier . '.tmp-' . bin2hex(random_bytes(4));
++    $h = @fopen($tmp, 'wb');
++    if (!$h) {
++        throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
++    }
++    fwrite($h, "\xEF\xBB\xBF");
++    foreach ($lignes as $l) {
++        fputcsv($h, $l, $sep, '"', '');
++    }
++    fclose($h);
++    if (!@rename($tmp, $fichier)) {
++        @unlink($tmp);
++        throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
++    }
++}
++
++/** Retire l'apostrophe ajoutée par ins_csv_sur() (pour réafficher une réponse enregistrée). */
++function ins_csv_brut(string $s): string
++{
++    return (strlen($s) > 1 && $s[0] === "'" && strpos("=+-@\t\r", $s[1]) !== false) ? substr($s, 1) : $s;
++}
++
+ /**
+- * Ajoute une réponse au fichier CSV (sous verrou).
++ * Ajoute une réponse au fichier CSV (sous verrou). Pour un formulaire à accès restreint, $acces
++ * (ligne du fichier des accès) identifie le répondant : sa réponse précédente est remplacée.
+  * @return array{0: ?string, 1: array<string,string>, 2: string} numéro, erreurs, message global
+  */
+-function ins_enregistrer(array $form, array $valeurs, string $langue = ''): array
++function ins_enregistrer(array $form, array $valeurs, string $langue = '', ?array $acces = null): array
+ {
+     $dir = ins_dossier_donnees();
+     $fichier = ins_fichier_donnees($form);
+     $cols = ins_colonnes($form);
+     $sep = (string)ins_config()['separateur'];
+ 
+-    $verrou = @fopen($dir . '/.verrou', 'c');
+-    if (!$verrou || !flock($verrou, LOCK_EX)) {
+-        throw new RuntimeException(t('err_verrou', ['dossier' => $dir]));
+-    }
++    $verrou = ins_verrouiller();
+     try {
++        // Accès restreint : relire l'accès sous verrou (révoqué entre-temps ? déjà répondu ?)
++        $tousAcces = [];
++        if ($form['acces'] !== '') {
++            $tousAcces = ins_lire_acces($form);
++            $acces = $acces !== null ? ($tousAcces[$acces['identifiant']] ?? null) : null;
++            if ($acces === null || $acces['etat'] !== 'actif') {
++                return [null, [], t('acces_revoque')];
++            }
++            if ($acces['repondu'] !== '' && !$form['modifiable']) {
++                return [null, [], t('acces_deja_repondu')];
++            }
++        }
++
+         $lignes = is_file($fichier) ? ins_lire_csv($fichier) : [];
+ 
+         // Si les champs du formulaire ont changé, l'ancien fichier est mis de côté.
+@@ -911,11 +990,23 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
+         }
+         $existantes = array_slice($lignes, 1);
+ 
+-        if ($form['places'] > 0 && count($existantes) >= $form['places']) {
++        // Réponse précédente de cet accès (modification)
++        $index = null;
++        if ($acces !== null) {
++            $ia = array_search('acces', $cols, true);
++            foreach ($existantes as $k => $l) {
++                if (($l[$ia] ?? '') === $acces['identifiant']) {
++                    $index = $k;
++                    break;
++                }
++            }
++        }
++
++        if ($index === null && $form['places'] > 0 && count($existantes) >= $form['places']) {
+             return [null, [], t('etat_complet')];
+         }
+ 
+-        // Champs « unique = oui » : refus des doublons (casse ignorée)
++        // Champs « unique = oui » : refus des doublons (casse ignorée), hors réponse modifiée
+         $erreurs = [];
+         foreach ($form['champs'] as $nom => $c) {
+             if (!$c['unique'] || ($valeurs[$nom] ?? '') === '') {
+@@ -923,8 +1014,8 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
+             }
+             $i = array_search($nom, $cols, true);
+             $cherche = ins_minuscules(ins_csv_sur($valeurs[$nom]));
+-            foreach ($existantes as $l) {
+-                if (ins_minuscules((string)($l[$i] ?? '')) === $cherche) {
++            foreach ($existantes as $k => $l) {
++                if ($k !== $index && ins_minuscules((string)($l[$i] ?? '')) === $cherche) {
+                     $erreurs[$nom] = t('v_deja_utilise');
+                     break;
+                 }
+@@ -934,13 +1025,17 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
+             return [null, $erreurs, ''];
+         }
+ 
+-        $pris = [];
+-        foreach ($existantes as $l) {
+-            $pris[$l[0] ?? ''] = true;
++        if ($index !== null) {
++            $numero = (string)$existantes[$index][0];
++        } else {
++            $pris = [];
++            foreach ($existantes as $l) {
++                $pris[$l[0] ?? ''] = true;
++            }
++            do {
++                $numero = ins_nouveau_numero();
++            } while (isset($pris[$numero]));
+         }
+-        do {
+-            $numero = ins_nouveau_numero();
+-        } while (isset($pris[$numero]));
+ 
+         $ligne = [];
+         foreach ($cols as $nom) {
+@@ -950,32 +1045,299 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = ''): arra
+                 $ligne[] = date('Y-m-d H:i:s');
+             } elseif ($nom === 'langue') {
+                 $ligne[] = $langue !== '' ? $langue : $form['langue'];
++            } elseif ($nom === 'acces') {
++                $ligne[] = $acces['identifiant'] ?? '';
++            } elseif ($nom === 'acces_nom') {
++                $ligne[] = ins_csv_sur($acces['nom'] ?? '');
+             } else {
+                 $ligne[] = ins_csv_sur((string)($valeurs[$nom] ?? ''));
+             }
+         }
+ 
+-        $nouveau = !is_file($fichier) || filesize($fichier) === 0;
+-        $h = @fopen($fichier, 'ab');
+-        if (!$h) {
+-            throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
++        if ($index !== null) {
++            $existantes[$index] = $ligne;
++            ins_ecrire_csv($fichier, array_merge([$cols], $existantes));
++        } else {
++            $nouveau = !is_file($fichier) || filesize($fichier) === 0;
++            $h = @fopen($fichier, 'ab');
++            if (!$h) {
++                throw new RuntimeException(t('err_ecriture', ['fichier' => $fichier]));
++            }
++            if ($nouveau) {
++                fwrite($h, "\xEF\xBB\xBF"); // BOM : les tableurs reconnaissent l'UTF-8
++                fputcsv($h, $cols, $sep, '"', '');
++            }
++            fputcsv($h, $ligne, $sep, '"', '');
++            fflush($h);
++            fclose($h);
+         }
+-        if ($nouveau) {
+-            fwrite($h, "\xEF\xBB\xBF"); // BOM : les tableurs reconnaissent l'UTF-8
+-            fputcsv($h, $cols, $sep, '"', '');
++
++        if ($acces !== null) {
++            $maintenant = date('Y-m-d H:i:s');
++            if ($acces['repondu'] === '') {
++                $tousAcces[$acces['identifiant']]['repondu'] = $maintenant;
++            } else {
++                $tousAcces[$acces['identifiant']]['modifie'] = $maintenant;
++            }
++            ins_ecrire_acces($form, $tousAcces);
+         }
+-        fputcsv($h, $ligne, $sep, '"', '');
+-        fflush($h);
+-        fclose($h);
+         return [$numero, [], ''];
+     } finally {
+-        flock($verrou, LOCK_UN);
+-        fclose($verrou);
++        ins_deverrouiller($verrou);
++    }
++}
++
++/** Réponse enregistrée pour un accès (valeurs par nom de champ), ou null. */
++function ins_reponse_acces(array $form, string $identifiant): ?array
++{
++    $fichier = ins_fichier_donnees($form);
++    if (!is_file($fichier)) {
++        return null;
++    }
++    $lignes = ins_lire_csv($fichier);
++    $cols = $lignes[0] ?? [];
++    $ia = array_search('acces', $cols, true);
++    if ($ia === false) {
++        return null;
+     }
++    foreach (array_slice($lignes, 1) as $l) {
++        if (($l[$ia] ?? '') === $identifiant) {
++            $res = [];
++            foreach ($cols as $k => $nom) {
++                $res[$nom] = ins_csv_brut((string)($l[$k] ?? ''));
++            }
++            return $res;
++        }
++    }
++    return null;
++}
++
++/* ------------------------------------------------------------------ */
++/* Accès personnels (formulaires à diffusion restreinte)              */
++/* ------------------------------------------------------------------ */
++
++function ins_fichier_acces(array $form): string
++{
++    $dir = ins_dossier_donnees() . '/acces';
++    ins_preparer_dossier($dir);
++    return $dir . '/' . $form['fichier'] . '.csv';
++}
++
++/** @return array<string,array> accès indexés par identifiant */
++function ins_lire_acces(array $form): array
++{
++    $f = ins_fichier_acces($form);
++    $res = [];
++    if (!is_file($f)) {
++        return $res;
++    }
++    foreach (array_slice(ins_lire_csv($f), 1) as $l) {
++        $a = [];
++        foreach (INS_COLONNES_ACCES as $k => $nom) {
++            $a[$nom] = (string)($l[$k] ?? '');
++        }
++        if ($a['identifiant'] !== '') {
++            $a['nom'] = ins_csv_brut($a['nom']);
++            $res[$a['identifiant']] = $a;
++        }
++    }
++    return $res;
++}
++
++/** À appeler sous verrou. */
++function ins_ecrire_acces(array $form, array $acces): void
++{
++    $lignes = [INS_COLONNES_ACCES];
++    foreach ($acces as $a) {
++        $l = [];
++        foreach (INS_COLONNES_ACCES as $nom) {
++            $l[] = $nom === 'nom' ? ins_csv_sur((string)$a[$nom]) : (string)$a[$nom];
++        }
++        $lignes[] = $l;
++    }
++    ins_ecrire_csv(ins_fichier_acces($form), $lignes);
++}
++
++function ins_aleatoire(int $n): string
++{
++    $alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O, 1/l/I
++    $s = '';
++    for ($i = 0; $i < $n; $i++) {
++        $s .= $alphabet[random_int(0, strlen($alphabet) - 1)];
++    }
++    return $s;
++}
++
++/** Nouveau secret d'un accès : [secret en clair, empreinte à stocker]. */
++function ins_nouveau_secret(string $type): array
++{
++    if ($type === 'lien') {
++        $clair = ins_aleatoire(24);
++        return [$clair, 'sha256:' . hash('sha256', $clair)];
++    }
++    $clair = ins_aleatoire(10);
++    return [$clair, password_hash($clair, PASSWORD_DEFAULT)];
++}
++
++/**
++ * Crée des accès pour une liste de noms (un accès par nom ; noms vides = accès anonymes).
++ * @return array<int,array{identifiant:string,nom:string,secret:string}> secrets EN CLAIR, à communiquer une seule fois
++ */
++function ins_creer_acces(array $form, array $noms): array
++{
++    $type = $form['acces'] === 'lien' ? 'lien' : 'mdp';
++    $verrou = ins_verrouiller();
++    try {
++        $tous = ins_lire_acces($form);
++        $crees = [];
++        foreach ($noms as $nom) {
++            do {
++                $id = ins_nouveau_numero();
++            } while (isset($tous[$id]));
++            [$clair, $empreinte] = ins_nouveau_secret($type);
++            $tous[$id] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'type' => $type, 'secret' => $empreinte,
++                'etat' => 'actif', 'cree' => date('Y-m-d H:i:s'), 'repondu' => '', 'modifie' => '', 'echecs' => '0', 'bloque' => ''];
++            $crees[] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'secret' => $clair];
++        }
++        ins_ecrire_acces($form, $tous);
++        return $crees;
++    } finally {
++        ins_deverrouiller($verrou);
++    }
++}
++
++/**
++ * Modifie un accès : « revoquer », « reactiver » ou « renouveler » (nouveau secret, renvoyé en clair).
++ * @return string|null nouveau secret en clair pour « renouveler »
++ */
++function ins_modifier_acces(array $form, string $id, string $action): ?string
++{
++    $verrou = ins_verrouiller();
++    try {
++        $tous = ins_lire_acces($form);
++        if (!isset($tous[$id])) {
++            throw new RuntimeException(t('introuvable'));
++        }
++        $clair = null;
++        if ($action === 'revoquer') {
++            $tous[$id]['etat'] = 'revoque';
++        } elseif ($action === 'reactiver') {
++            $tous[$id]['etat'] = 'actif';
++            $tous[$id]['echecs'] = '0';
++            $tous[$id]['bloque'] = '';
++        } elseif ($action === 'renouveler') {
++            $type = $form['acces'] === 'lien' ? 'lien' : 'mdp';
++            [$clair, $empreinte] = ins_nouveau_secret($type);
++            $tous[$id]['type'] = $type;
++            $tous[$id]['secret'] = $empreinte;
++            $tous[$id]['echecs'] = '0';
++            $tous[$id]['bloque'] = '';
++        } else {
++            throw new RuntimeException(t('introuvable'));
++        }
++        ins_ecrire_acces($form, $tous);
++        return $clair;
++    } finally {
++        ins_deverrouiller($verrou);
++    }
++}
++
++/** Accès en mode « lien seul » : identifiant + jeton du lien. */
++function ins_verifier_lien(array $form, string $id, $jeton): ?array
++{
++    $a = ins_lire_acces($form)[$id] ?? null;
++    if ($a === null || $a['type'] !== 'lien' || !is_string($jeton) || $jeton === '') {
++        return null;
++    }
++    return hash_equals($a['secret'], 'sha256:' . hash('sha256', $jeton)) ? $a : null;
++}
++
++/**
++ * Accès en mode « lien + mot de passe » : vérifie le mot de passe, compte les échecs, bloque après trop d'essais.
++ * @return array{0: ?array, 1: string} accès, code d'erreur ('' si succès)
++ */
++function ins_verifier_mot_de_passe(array $form, string $id, string $mdp): array
++{
++    $verrou = ins_verrouiller();
++    try {
++        $tous = ins_lire_acces($form);
++        $a = $tous[$id] ?? null;
++        if ($a === null || $a['type'] !== 'mdp') {
++            password_verify($mdp, password_hash('-', PASSWORD_DEFAULT)); // même durée qu'un vrai essai
++            return [null, 'acces_mdp_incorrect'];
++        }
++        if ($a['bloque'] !== '' && (int)$a['bloque'] > time()) {
++            return [null, 'acces_bloque'];
++        }
++        if (!password_verify($mdp, $a['secret'])) {
++            $echecs = (int)$a['echecs'] + 1;
++            $tous[$id]['echecs'] = (string)$echecs;
++            if ($echecs >= INS_ACCES_ECHECS_MAX) {
++                $tous[$id]['echecs'] = '0';
++                $tous[$id]['bloque'] = (string)(time() + INS_ACCES_BLOCAGE);
++            }
++            ins_ecrire_acces($form, $tous);
++            return [null, $echecs >= INS_ACCES_ECHECS_MAX ? 'acces_bloque' : 'acces_mdp_incorrect'];
++        }
++        if ($a['echecs'] !== '0' || $a['bloque'] !== '') {
++            $tous[$id]['echecs'] = '0';
++            $tous[$id]['bloque'] = '';
++            ins_ecrire_acces($form, $tous);
++        }
++        return [$tous[$id], ''];
++    } finally {
++        ins_deverrouiller($verrou);
++    }
++}
++
++/** Nom du cookie de connexion d'un formulaire à mot de passe. */
++function ins_cookie_acces(string $fid): string
++{
++    return 'ins_acces_' . substr(hash('sha256', $fid), 0, 12);
++}
++
++/** Valeur du cookie : identifiant.expiration.signature (la signature dépend du mot de passe actuel). */
++function ins_jeton_acces(string $fid, array $a): string
++{
++    $exp = time() + INS_ACCES_DUREE;
++    return $a['identifiant'] . '.' . $exp . '.' . ins_signer("acces|$fid|{$a['identifiant']}|$exp|" . substr($a['secret'], -16));
++}
++
++/** Accès connecté par cookie (mode « lien + mot de passe »), ou null. */
++function ins_acces_par_cookie(array $form, string $id): ?array
++{
++    $v = $_COOKIE[ins_cookie_acces($form['id'])] ?? '';
++    if (!is_string($v) || !preg_match('/^([A-Z0-9]{4}-[A-Z0-9]{4})\.(\d+)\.([0-9a-f]{32})$/', $v, $m) || $m[1] !== $id || (int)$m[2] < time()) {
++        return null;
++    }
++    $a = ins_lire_acces($form)[$id] ?? null;
++    if ($a === null || $a['type'] !== 'mdp') {
++        return null;
++    }
++    return hash_equals(ins_signer("acces|{$form['id']}|$id|{$m[2]}|" . substr($a['secret'], -16)), $m[3]) ? $a : null;
++}
++
++/** Adresse de base du formulaire public (https://site/dossier/index.php). */
++function ins_url_base(): string
++{
++    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
++    $hote = (string)($_SERVER['HTTP_HOST'] ?? 'localhost');
++    $chemin = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/index.php'))), '/');
++    return ($https ? 'https' : 'http') . '://' . $hote . $chemin . '/index.php';
++}
++
++/** Lien personnel d'un accès (avec le jeton pour le mode « lien seul »). */
++function ins_lien_acces(array $form, string $id, ?string $jeton = null): string
++{
++    $q = ['f' => $form['id'], 'i' => $id];
++    if ($jeton !== null && $form['acces'] === 'lien') {
++        $q['t'] = $jeton;
++    }
++    return ins_url_base() . '?' . http_build_query($q);
+ }
+ 
+ /** Envoi facultatif d'un courriel au gestionnaire (« notifier = » dans le descripteur). */
+-function ins_notifier(array $form, string $numero, array $valeurs): void
++function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces = null): void
+ {
+     if ($form['notifier'] === '' || !function_exists('mail')) {
+         return;
+@@ -986,7 +1348,11 @@ function ins_notifier(array $form, string $numero, array $valeurs): void
+     if (!$dest) {
+         return;
+     }
+-    $corps = t('mail_corps', ['numero' => $numero, 'titre' => $form['titre']]) . "\n\n";
++    $corps = t('mail_corps', ['numero' => $numero, 'titre' => $form['titre']]) . "\n";
++    if ($acces !== null) {
++        $corps .= t('mail_acces', ['id' => $acces['identifiant'], 'nom' => $acces['nom']]) . "\n";
++    }
++    $corps .= "\n";
+     foreach ($form['champs'] as $nom => $c) {
+         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
+             $corps .= $c['libelle'] . ' : ' . ($valeurs[$nom] ?? '') . "\n";
+@@ -1100,6 +1466,9 @@ th,td{border:1px solid var(--bord);padding:.3rem .5rem;text-align:left;vertical-
+ th{background:#e9eef3;position:sticky;top:0}
+ .defile{overflow:auto;max-height:75vh}
+ .petit{font-size:.88rem;color:#57606a}
++td code{white-space:nowrap}
++td.actions form{display:block;margin:.15rem 0}
++td.actions button{width:100%;white-space:nowrap}
+ .langues{text-align:right;font-size:.9rem}
+ @media (max-width:30rem){.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
+ CSS;
+-- 
+2.43.0
+

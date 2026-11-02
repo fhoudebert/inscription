@@ -5,6 +5,7 @@
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
 [Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Accès restreint](#accès-restreint) ·
 [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
 
@@ -24,7 +25,7 @@ il l'affiche directement. Les formulaires non diffusés s'ouvrent par leur [lien
 
 - Une section `[formulaire]` donne les réglages généraux, puis **une section par champ**, dans l'ordre d'affichage.
 - Le nom de section d'un champ (`[email]`, `[nom_prenom]`…) devient le **nom de la colonne** dans le fichier CSV :
-  lettres non accentuées, chiffres et `_`, commençant par une lettre. `numero`, `date` et `langue` sont réservés.
+  lettres non accentuées, chiffres et `_`, commençant par une lettre. `numero`, `date`, `langue`, `acces` et `acces_nom` sont réservés.
 - **Mettez les textes entre guillemets doubles** : `libelle = "Nom de l'association"`.
   Un guillemet double dans un texte s'écrit `\"`. Un texte entre guillemets peut tenir sur plusieurs lignes.
 - Une ligne commençant par `;` est un commentaire.
@@ -47,6 +48,8 @@ Réglages de la section `[formulaire]` :
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque réponse (séparées par des virgules) | — |
 | `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le [lien de partage](#diffusion-et-lien-de-partage) | oui |
+| `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
+| `modifiable` | accès restreint : `oui` = chaque personne peut revenir modifier sa réponse ; `non` = une réponse définitive | oui |
 | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
 | `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
 | `langues`   | formulaire multilingue : langues proposées, ex. `"fr \| en"` (voir [Formulaire multilingue](#formulaire-multilingue)) | — |
@@ -162,6 +165,7 @@ obligatoire = oui
 | `sondage.ini` | questionnaire de satisfaction anonyme, non diffusé |
 | `colloque.ini` | formulaire bilingue français / anglais |
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
+| `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 
 ## Diffusion et lien de partage
 
@@ -177,6 +181,39 @@ Pour **révoquer** un lien, renommez le formulaire (nouveau nom de fichier `.ini
 Supprimer `.secret` change d'un coup les liens de tous les formulaires non diffusés.
 
 L'ancienne écriture `cache = oui` reste acceptée et équivaut à `diffusion = non`.
+
+## Accès restreint
+
+Pour réserver un formulaire à des personnes connues (membres, invités, jury…) et empêcher toute saisie par des robots
+ou des inconnus :
+
+```ini
+[formulaire]
+titre      = "Assemblée générale — réponse des membres"
+acces      = personnel     ; ou : lien
+modifiable = oui           ; défaut
+```
+
+| `acces` | ce que reçoit chaque personne | pour qui |
+|---------|-------------------------------|----------|
+| `personnel` | un **lien personnel** (`index.php?f=ag&i=K7QF-M2ZD`) **et un mot de passe** de 10 caractères | le plus sûr, surtout si le lien et le mot de passe partent par des canaux différents (e-mail + papier, SMS…) |
+| `lien` | un **lien personnel secret** seul (`…&i=K7QF-M2ZD&t=…`) : rien à saisir | le plus simple ; transférer le lien revient à transférer l'accès |
+
+Fonctionnement :
+
+- les accès (un par personne, avec son nom ou son adresse) se créent dans `admin.php`, puis la liste est téléchargée
+  et diffusée **hors de l'application** (publipostage, courrier…) — voir [Accès personnels](administration.md#accès-personnels) ;
+- **une seule réponse par accès**. Avec `modifiable = oui`, la personne qui revient avec son lien (et son mot de passe)
+  retrouve sa réponse pré-remplie et peut la modifier jusqu'à la fermeture : la réponse est **remplacée**, pas ajoutée ;
+  avec `modifiable = non`, elle voit « Vous avez déjà répondu » ;
+- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès) :
+  on sait qui a répondu quoi ;
+- un formulaire à accès restreint n'apparaît **jamais** dans la liste publique, et sans lien valide l'adresse répond « Page introuvable » ;
+- `places` limite le nombre de personnes qui répondent ; une modification ne compte pas comme une nouvelle réponse ;
+- en mode `personnel`, la connexion dure 2 heures (lien « se déconnecter » sur la page) ; après 10 mots de passe faux,
+  l'accès est bloqué 15 minutes.
+
+Exemple complet : `prive/formulaires/ag-membres.ini`.
 
 ## Formulaire multilingue
 
@@ -228,6 +265,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
+| `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |
 | | | | `echelle`, `titre` | `scale`, `heading` |
 

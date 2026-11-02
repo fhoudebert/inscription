@@ -5,9 +5,11 @@ sans base de données ni programmation :
 
 - chaque formulaire est **décrit dans un fichier texte** (`.ini`) ;
 - les réponses s'ajoutent à un **fichier CSV** qui s'ouvre dans Excel, LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) ;
-- un formulaire est **diffusé** (listé sur la page d'accueil) ou **non diffusé** (ouvert seulement par un lien de partage) ;
+- un formulaire est **diffusé** (listé sur la page d'accueil), **non diffusé** (ouvert seulement par un lien de partage)
+  ou à **accès restreint** : chaque personne invitée reçoit un lien personnel (et un mot de passe), répond une fois
+  et peut modifier sa réponse — les robots et les inconnus ne peuvent rien envoyer ;
 - une **page d'administration** protégée par mot de passe permet de télécharger les réponses, copier les liens de partage,
-  ajouter ou supprimer des formulaires ;
+  créer les accès personnels, ajouter ou supprimer des formulaires ;
 - l'interface est en **français et en anglais**, et un formulaire peut être **multilingue** (langue du navigateur, changement par un lien).
 
 Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune session PHP, aucune base MySQL.
@@ -16,8 +18,8 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
 
 | page | contenu |
 |------|---------|
-| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, formulaires multilingues, exemples |
-| **[Administration](docs/administration.md)** | page `admin.php`, récupération des réponses, gestion des formulaires, zone privée, réglages, sécurité, dépannage, langues de l'interface |
+| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, accès restreint, formulaires multilingues, exemples |
+| **[Administration](docs/administration.md)** | page `admin.php`, récupération des réponses, gestion des formulaires, accès personnels, zone privée, réglages, sécurité, dépannage, langues de l'interface |
 
 ## Installation en bref
 
@@ -70,7 +72,7 @@ Déposé sous `prive/formulaires/reunion.ini` (par FTP ou depuis `admin.php`), i
 `index.php?f=reunion` ; les réponses arrivent dans `prive/donnees/reunion.csv`.
 
 Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),
-`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais).
+`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe).
 Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
 
 ## Données personnelles
