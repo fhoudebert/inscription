@@ -22,7 +22,7 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
 ## Installation en bref
 
 1. Copiez le dossier `inscription/` par FTP dans la partie publique du site (`www/`, `public_html/`, racine chez Free).
-   Le formulaire est à l'adresse `https://votre-site.fr/inscription/`.
+   Le formulaire sera à l'adresse `https://votre-site.fr/inscription/`. Vous pouvez aussi copier le contenu du dossier vers un dossier de votre choix. (Le formulaire sera à l'adresse `https://votre-site.fr/votredossier/`.)
 2. Vérifiez que PHP peut écrire dans `prive/donnees/` (et dans `prive/formulaires/` pour gérer les formulaires depuis l'admin) :
    droits `755`, ou `775`/`777` si l'enregistrement échoue.
 3. Ouvrez `admin.php`, choisissez un mot de passe et collez la ligne obtenue dans `prive/config.php`.
