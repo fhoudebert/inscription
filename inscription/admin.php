@@ -391,6 +391,10 @@ foreach ($formulaires as $id => $form) {
             : '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>') . '<br>';
     echo e(t('adm_nb_reponses', ['n' => $nb])) . ($form['places'] ? ' / ' . e(t('adm_places', ['n' => $form['places']])) : '');
     echo ' · ' . ($etat === '' ? e(t('adm_ouvert')) : e($etat));
+    if (ins_multilingue($form)) {
+        $noms = array_map(function ($lg) { return ins_textes($lg)['nom_langue'] ?? $lg; }, $form['langues']);
+        echo ' · ' . e(t('adm_langues', ['langues' => implode(', ', $noms)]));
+    }
     echo '<div class="lien"><input type="text" readonly value="' . e($lien) . '" aria-label="' . e(t('adm_lien_partage')) . '">'
         . '<button type="button" class="sec copier">' . e(t('adm_copier')) . '</button>'
         . '<a class="btn sec" href="' . e($lien) . '" target="_blank" rel="noopener">' . e(t('adm_ouvrir')) . '</a></div>';

@@ -13,6 +13,11 @@ if (!defined('INS_PRIVE')) {
 }
 
 const INS_COLONNES_FIXES = ['numero', 'date'];
+// Noms interdits pour les champs (colonnes ajoutées automatiquement)
+const INS_NOMS_RESERVES = ['numero', 'date', 'langue'];
+// Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton'];
+const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
     'choix', 'liste', 'cases', 'case', 'echelle', 'titre', 'info',
@@ -37,7 +42,7 @@ const INS_CLES_FORMULAIRE = [
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
-    'langue' => ['langue', 'language'], 'cache' => ['cache', 'hidden'],
+    'langue' => ['langue', 'language'], 'langues' => ['langues', 'languages'], 'cache' => ['cache', 'hidden'],
 ];
 const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
@@ -249,6 +254,23 @@ function ins_cle(array $tab, array $noms, $defaut = null)
     return $defaut;
 }
 
+/** Traduction d'une clé : « libelle_en », « label_en »… ; null si absente. */
+function ins_cle_trad(array $tab, array $noms, string $langue): ?string
+{
+    foreach ($noms as $n) {
+        $k = $n . '_' . $langue;
+        if (array_key_exists($k, $tab) && !is_array($tab[$k])) {
+            return trim((string)$tab[$k]);
+        }
+    }
+    return null;
+}
+
+function ins_liste_options(string $v): array
+{
+    return array_values(array_filter(array_map('trim', explode('|', $v)), 'strlen'));
+}
+
 /* ------------------------------------------------------------------ */
 /* Descripteurs de formulaires                                        */
 /* ------------------------------------------------------------------ */
@@ -257,7 +279,7 @@ function ins_cle(array $tab, array $noms, $defaut = null)
  * Formulaires diffusés (affichés dans la liste publique).
  * @return array<string,string> identifiant => titre
  */
-function ins_liste_formulaires(): array
+function ins_liste_formulaires(?string $langue = null): array
 {
     $liste = [];
     foreach (glob(ins_dossier_formulaires() . '/*.ini') ?: [] as $f) {
@@ -268,7 +290,7 @@ function ins_liste_formulaires(): array
         try {
             $form = ins_charger_formulaire($id);
             if ($form['diffusion']) {
-                $liste[$id] = $form['titre'];
+                $liste[$id] = $langue !== null ? ins_localiser($form, $langue)['titre'] : $form['titre'];
             }
         } catch (Throwable $ex) {
             error_log('inscription : ' . $ex->getMessage());
@@ -315,6 +337,19 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         return is_array($v) ? $defaut : $v;
     };
 
+    // Langue de base (celle des textes sans suffixe et des valeurs enregistrées) et langues proposées
+    $base = strtolower(trim((string)$lit('langue')));
+    $langues = array_map('strtolower', ins_liste_options((string)$lit('langues')));
+    if ($base === '') {
+        $base = $langues[0] ?? (string)ins_config()['langue'];
+    }
+    $langues = array_values(array_unique(array_merge([$base], $langues)));
+    foreach ($langues as $lg) {
+        if (!in_array($lg, ins_langues(), true)) {
+            throw new RuntimeException(t('err_langue', ['f' => $f, 'langue' => $lg]));
+        }
+    }
+
     $diffusion = $lit('diffusion', null);
     $form = [
         'id'              => $id,
@@ -330,9 +365,19 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         // diffusion = oui par défaut ; l'ancienne clé « cache = oui » vaut diffusion = non
         'diffusion'       => $diffusion !== null ? ins_oui($diffusion) : !ins_oui($lit('cache')),
         'afficher_numero' => ins_oui($lit('afficher_numero', 'oui')),
-        'langue'          => trim((string)$lit('langue')),
+        'langue'          => $base,
+        'langues'         => $langues,
+        'trad'            => [],
         'champs'          => [],
     ];
+    foreach (array_slice($langues, 1) as $lg) {
+        foreach (INS_TRAD_FORMULAIRE as $cle) {
+            $v = ins_cle_trad(is_array($g) ? $g : [], INS_CLES_FORMULAIRE[$cle], $lg);
+            if ($v !== null && $v !== '') {
+                $form['trad'][$lg][$cle] = $v;
+            }
+        }
+    }
     if (!ins_id_valide($form['fichier'])) {
         throw new RuntimeException(t('err_fichier', ['f' => $f]));
     }
@@ -343,7 +388,7 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         if (!is_array($p)) {
             throw new RuntimeException(t('err_hors_section', ['f' => $f, 'nom' => $nom]));
         }
-        if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/i', $nom) || in_array(strtolower($nom), INS_COLONNES_FIXES, true)) {
+        if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/i', $nom) || in_array(strtolower($nom), INS_NOMS_RESERVES, true)) {
             throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $nom]));
         }
         $lc = function (string $cle, $defaut = '') use ($p) {
@@ -382,7 +427,23 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
             'gauche'      => trim((string)$lc('gauche')),
             'droite'      => trim((string)$lc('droite')),
             'si'          => [],
+            'trad'        => [],
         ];
+        foreach (array_slice($langues, 1) as $lg) {
+            foreach (INS_TRAD_CHAMP as $cle) {
+                $v = ins_cle_trad($p, INS_CLES_CHAMP[$cle], $lg);
+                if ($v === null || $v === '') {
+                    continue;
+                }
+                if ($cle === 'options') {
+                    $v = ins_liste_options($v);
+                    if (count($v) !== count($options)) {
+                        throw new RuntimeException(t('err_options_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($options)]));
+                    }
+                }
+                $champ['trad'][$lg][$cle] = $v;
+            }
+        }
         if (trim((string)$lc('si')) !== '') {
             $champ['si'] = ins_conditions((string)$lc('si'), $vus, $f, $nom);
         }
@@ -451,10 +512,98 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
     return $res;
 }
 
+/**
+ * Version du formulaire dans la langue demandée (textes traduits quand ils existent,
+ * sinon ceux de la langue de base). Chaque champ reçoit « options_aff » : les libellés
+ * affichés des options, alors que « options » garde les valeurs enregistrées (langue de base).
+ */
+function ins_localiser(array $form, string $langue): array
+{
+    if (!in_array($langue, $form['langues'], true)) {
+        $langue = $form['langue'];
+    }
+    foreach ($form['trad'][$langue] ?? [] as $cle => $v) {
+        $form[$cle] = $v;
+    }
+    foreach ($form['champs'] as $nom => $c) {
+        $c['options_aff'] = $c['options'];
+        foreach ($c['trad'][$langue] ?? [] as $cle => $v) {
+            $c[$cle === 'options' ? 'options_aff' : $cle] = $v;
+        }
+        $form['champs'][$nom] = $c;
+    }
+    $form['langue_affichee'] = $langue;
+    return $form;
+}
+
+/**
+ * Langue du visiteur parmi $possibles : lien « ?lang= » (mémorisé dans un cookie),
+ * sinon cookie, sinon langue préférée du navigateur, sinon $defaut.
+ */
+function ins_langue_visiteur(array $possibles, string $defaut): string
+{
+    $demande = isset($_GET['lang']) && is_string($_GET['lang']) ? strtolower($_GET['lang']) : '';
+    if ($demande !== '' && in_array($demande, ins_langues(), true)) {
+        $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        setcookie('ins_lang', $demande, ['expires' => time() + 365 * 86400, 'path' => '/', 'httponly' => true, 'secure' => $https, 'samesite' => 'Lax']);
+        $_COOKIE['ins_lang'] = $demande;
+        if (in_array($demande, $possibles, true)) {
+            return $demande;
+        }
+    }
+    $cookie = isset($_COOKIE['ins_lang']) && is_string($_COOKIE['ins_lang']) ? $_COOKIE['ins_lang'] : '';
+    if (in_array($cookie, $possibles, true)) {
+        return $cookie;
+    }
+    // Accept-Language : « fr-FR,fr;q=0.9,en;q=0.8 »
+    $prefs = [];
+    foreach (explode(',', (string)($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '')) as $i => $morceau) {
+        if (preg_match('/^\s*([a-z]{2,3})(?:-[a-z0-9]+)?\s*(?:;\s*q=([0-9.]+))?/i', $morceau, $m)) {
+            $q = isset($m[2]) && $m[2] !== '' ? (float)$m[2] : 1.0;
+            $lg = strtolower($m[1]);
+            if (!isset($prefs[$lg]) || $prefs[$lg] < $q - $i / 1000) {
+                $prefs[$lg] = $q - $i / 1000; // à qualité égale, l'ordre du navigateur départage
+            }
+        }
+    }
+    arsort($prefs);
+    foreach ($prefs as $lg => $q) {
+        if ($q > 0 && in_array($lg, $possibles, true)) {
+            return $lg;
+        }
+    }
+    return in_array($defaut, $possibles, true) ? $defaut : ($possibles[0] ?? $defaut);
+}
+
+/** Liens de changement de langue : « English · Français » (langue courante en gras). */
+function ins_liens_langues(array $langues, string $courante, array $params = []): string
+{
+    if (count($langues) < 2) {
+        return '';
+    }
+    $liens = [];
+    foreach ($langues as $lg) {
+        $nom = ins_textes($lg)['nom_langue'] ?? $lg;
+        $liens[] = $lg === $courante
+            ? '<b>' . e($nom) . '</b>'
+            : '<a href="?' . e(http_build_query($params + ['lang' => $lg])) . '" hreflang="' . e($lg) . '" lang="' . e($lg) . '">' . e($nom) . '</a>';
+    }
+    return '<p class="langues">' . implode(' · ', $liens) . '</p>';
+}
+
+/** Le formulaire est-il proposé en plusieurs langues ? (ajoute la colonne « langue » au CSV) */
+function ins_multilingue(array $form): bool
+{
+    return count($form['langues']) > 1;
+}
+
 /** Colonnes du fichier de données, dans l'ordre. */
 function ins_colonnes(array $form): array
 {
     $cols = INS_COLONNES_FIXES;
+    if (ins_multilingue($form)) {
+        $cols[] = 'langue';
+    }
     foreach ($form['champs'] as $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
             $cols[] = $c['nom'];
@@ -488,13 +637,21 @@ function ins_acces_autorise(array $form, $cle): bool
 }
 
 /** Adresse relative du formulaire (avec la clé de partage s'il n'est pas diffusé). */
-function ins_url_formulaire(array $form): string
+function ins_url_formulaire(array $form, ?string $langue = null): string
+{
+    return '?' . http_build_query(ins_params_formulaire($form, $langue));
+}
+
+function ins_params_formulaire(array $form, ?string $langue = null): array
 {
     $q = ['f' => $form['id']];
     if (!$form['diffusion']) {
         $q['k'] = ins_cle_partage($form['id']);
     }
-    return '?' . http_build_query($q);
+    if ($langue !== null && ins_multilingue($form)) {
+        $q['lang'] = $langue;
+    }
+    return $q;
 }
 
 /* ------------------------------------------------------------------ */
@@ -544,12 +701,13 @@ function ins_choisis(array $c, $brut): array
 }
 
 /** Valeur enregistrée pour une case cochée / non cochée (dans la langue du formulaire). */
-function ins_valeur_case(bool $cochee): string
+function ins_valeur_case(bool $cochee, string $langue): string
 {
-    return $cochee ? t('val_oui') : t('val_non');
+    $txt = ins_textes($langue) + ins_textes('fr');
+    return $cochee ? $txt['val_oui'] : $txt['val_non'];
 }
 
-function ins_visible(array $c, array $valeurs, array $visibles, array $champs): bool
+function ins_visible(array $c, array $valeurs, array $visibles, array $champs, string $langue): bool
 {
     foreach ($c['si'] as $cond) {
         $cible = $cond['champ'];
@@ -558,7 +716,7 @@ function ins_visible(array $c, array $valeurs, array $visibles, array $champs): 
         }
         $v = $valeurs[$cible] ?? '';
         if ($champs[$cible]['type'] === 'case') {
-            $choisis = [$v === ins_valeur_case(true) ? '1' : '0'];
+            $choisis = [$v === ins_valeur_case(true, $langue) ? '1' : '0'];
         } else {
             $choisis = $v === '' ? [] : array_map('ins_minuscules', array_map('trim', explode('|', $v)));
         }
@@ -594,7 +752,7 @@ function ins_valider(array $form, array $post): array
         }
         $b = $post[$nom] ?? null;
         $brut[$nom] = $b;
-        $visible = ins_visible($c, $valeurs, $visibles, $form['champs']);
+        $visible = ins_visible($c, $valeurs, $visibles, $form['champs'], $form['langue']);
         $visibles[$nom] = $visible;
         if (!$visible) {
             $valeurs[$nom] = '';
@@ -617,7 +775,7 @@ function ins_valider(array $form, array $post): array
                 break;
             case 'case':
                 $cochee = $b !== null && $b !== '' && !is_array($b);
-                $v = ins_valeur_case($cochee);
+                $v = ins_valeur_case($cochee, $form['langue']); // toujours dans la langue de base
                 if ($c['obligatoire'] && !$cochee) {
                     $err = t('v_case_obligatoire');
                 }
@@ -732,7 +890,7 @@ function ins_nouveau_numero(): string
  * Ajoute une réponse au fichier CSV (sous verrou).
  * @return array{0: ?string, 1: array<string,string>, 2: string} numéro, erreurs, message global
  */
-function ins_enregistrer(array $form, array $valeurs): array
+function ins_enregistrer(array $form, array $valeurs, string $langue = ''): array
 {
     $dir = ins_dossier_donnees();
     $fichier = ins_fichier_donnees($form);
@@ -784,9 +942,17 @@ function ins_enregistrer(array $form, array $valeurs): array
             $numero = ins_nouveau_numero();
         } while (isset($pris[$numero]));
 
-        $ligne = [$numero, date('Y-m-d H:i:s')];
-        foreach (array_slice($cols, count(INS_COLONNES_FIXES)) as $nom) {
-            $ligne[] = ins_csv_sur((string)($valeurs[$nom] ?? ''));
+        $ligne = [];
+        foreach ($cols as $nom) {
+            if ($nom === 'numero') {
+                $ligne[] = $numero;
+            } elseif ($nom === 'date') {
+                $ligne[] = date('Y-m-d H:i:s');
+            } elseif ($nom === 'langue') {
+                $ligne[] = $langue !== '' ? $langue : $form['langue'];
+            } else {
+                $ligne[] = ins_csv_sur((string)($valeurs[$nom] ?? ''));
+            }
         }
 
         $nouveau = !is_file($fichier) || filesize($fichier) === 0;

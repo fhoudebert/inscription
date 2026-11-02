@@ -4,6 +4,7 @@
  *   index.php                  → liste des formulaires diffusés (ou le formulaire, s'il n'y en a qu'un)
  *   index.php?f=<nom>          → formulaire diffusé décrit par formulaires/<nom>.ini
  *   index.php?f=<nom>&k=<clé>  → formulaire non diffusé, ouvert par son lien de partage
+ *   &lang=en                   → choix de la langue (page d'accueil, formulaires multilingues)
  */
 declare(strict_types=1);
 
@@ -41,13 +42,17 @@ $cle = isset($_GET['k']) && is_string($_GET['k']) ? $_GET['k'] : '';
 
 /* ---------- Liste des formulaires diffusés ---------- */
 if ($fid === '') {
-    $liste = ins_liste_formulaires();
+    // Page d'accueil : langue du navigateur, ou celle choisie par lien, parmi les langues installées
+    $lgAccueil = ins_langue_visiteur(ins_langues(), (string)$cfg['langue']);
+    ins_langue($lgAccueil);
+    $liste = ins_liste_formulaires($lgAccueil);
     if (count($liste) === 1) {
         $fid = (string)array_key_first($liste);
     } elseif (!$cfg['liste_publique']) {
         ins_erreur_page(404, t('introuvable'));
     } else {
         ins_entete(t('liste_titre'));
+        echo ins_liens_langues(ins_langues(), $lgAccueil);
         echo '<h1>' . e(t('liste_titre')) . '</h1>';
         if (!$liste) {
             echo '<p>' . e(t('liste_vide')) . '</p>';
@@ -76,10 +81,14 @@ try {
 if (!ins_acces_autorise($form, $cle)) {
     ins_erreur_page(404, t('introuvable'));
 }
-if ($form['langue'] !== '') {
-    ins_langue($form['langue']);
-}
-$url = ins_url_formulaire($form);
+// Langue d'affichage : fixe pour un formulaire unilingue ; pour un formulaire multilingue,
+// lien « &lang= », sinon choix mémorisé, sinon langue du navigateur, sinon langue de base.
+$formBase = $form;
+$lg = ins_multilingue($form) ? ins_langue_visiteur($form['langues'], $form['langue']) : $form['langue'];
+ins_langue($lg);
+$form = ins_localiser($form, $lg);
+$url = ins_url_formulaire($form, $lg);
+$liensLangues = ins_liens_langues($form['langues'], $lg, ins_params_formulaire($form));
 
 $brut = [];
 $erreurs = [];
@@ -102,13 +111,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alerte = t('page_expiree');
     } elseif (!$erreurs) {
         try {
-            [$numero, $erreurs, $alerte] = ins_enregistrer($form, $valeurs);
+            [$numero, $erreurs, $alerte] = ins_enregistrer($form, $valeurs, $lg);
         } catch (Throwable $ex) {
             error_log('inscription : ' . $ex->getMessage());
             ins_erreur_page(500, t('echec_enregistrement'), $ex->getMessage());
         }
         if ($numero !== null) {
-            ins_notifier($form, $numero, $valeurs);
+            ins_notifier($formBase, $numero, $valeurs); // libellés dans la langue de base
             $sig = ins_signer("merci|$fid|$numero");
             header('Location: ' . $url . '&merci=' . rawurlencode($numero) . '&s=' . $sig, true, 303);
             exit;
@@ -120,6 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 ins_entete($form['titre']);
+echo $liensLangues;
 echo '<h1>' . e($form['titre']) . '</h1>';
 
 /* ---------- Page de remerciement ---------- */
@@ -192,16 +202,16 @@ foreach ($form['champs'] as $nom => $c) {
             echo '<textarea id="' . $idh . '" name="' . e($nom) . '"' . $ph . $aria . '>' . e($val) . '</textarea>';
             break;
         case 'choix':
-            foreach ($c['options'] as $opt) {
+            foreach ($c['options'] as $i => $opt) {
                 $ch = $val === $opt ? ' checked' : '';
-                echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '> <span>' . e($opt) . '</span></label>';
+                echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '> <span>' . e($c['options_aff'][$i]) . '</span></label>';
             }
             break;
         case 'echelle':
             echo '<div class="echelle"><div class="notes">';
-            foreach ($c['options'] as $opt) {
+            foreach ($c['options'] as $i => $opt) {
                 $ch = $val === $opt ? ' checked' : '';
-                echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '><span>' . e($opt) . '</span></label>';
+                echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '><span>' . e($c['options_aff'][$i]) . '</span></label>';
             }
             echo '</div>';
             if ($c['gauche'] !== '' || $c['droite'] !== '') {
@@ -211,16 +221,16 @@ foreach ($form['champs'] as $nom => $c) {
             break;
         case 'liste':
             echo '<select id="' . $idh . '" name="' . e($nom) . '"' . $aria . '><option value="">' . e(t('choisir')) . '</option>';
-            foreach ($c['options'] as $opt) {
-                echo '<option' . ($val === $opt ? ' selected' : '') . '>' . e($opt) . '</option>';
+            foreach ($c['options'] as $i => $opt) {
+                echo '<option value="' . e($opt) . '"' . ($val === $opt ? ' selected' : '') . '>' . e($c['options_aff'][$i]) . '</option>';
             }
             echo '</select>';
             break;
         case 'cases':
             $sel = is_array($b) ? $b : (is_string($b) && $b !== '' ? array_map('trim', explode('|', $b)) : []);
-            foreach ($c['options'] as $opt) {
+            foreach ($c['options'] as $i => $opt) {
                 $ch = in_array($opt, $sel, true) ? ' checked' : '';
-                echo '<label class="opt"><input type="checkbox" name="' . e($nom) . '[]" value="' . e($opt) . '"' . $ch . '> <span>' . e($opt) . '</span></label>';
+                echo '<label class="opt"><input type="checkbox" name="' . e($nom) . '[]" value="' . e($opt) . '"' . $ch . '> <span>' . e($c['options_aff'][$i]) . '</span></label>';
             }
             break;
         case 'case':
