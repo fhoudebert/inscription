@@ -1,8 +1,9 @@
 <?php
 /*
  * Formulaire d'inscription générique — page publique.
- *   index.php            → liste des formulaires (ou le formulaire, s'il n'y en a qu'un)
- *   index.php?f=<nom>    → le formulaire décrit par formulaires/<nom>.ini
+ *   index.php                  → liste des formulaires diffusés (ou le formulaire, s'il n'y en a qu'un)
+ *   index.php?f=<nom>          → formulaire diffusé décrit par formulaires/<nom>.ini
+ *   index.php?f=<nom>&k=<clé>  → formulaire non diffusé, ouvert par son lien de partage
  */
 declare(strict_types=1);
 
@@ -18,7 +19,8 @@ try {
     error_log('inscription : ' . $ex->getMessage());
     http_response_code(500);
     header('Content-Type: text/plain; charset=utf-8');
-    echo "Formulaire indisponible : installation incomplète (voir emplacement.php et le dossier prive).\n";
+    echo "Formulaire indisponible : installation incomplète (voir emplacement.php et le dossier prive).\n"
+        . "Form unavailable: incomplete installation (see emplacement.php and the prive folder).\n";
     exit;
 }
 
@@ -35,19 +37,20 @@ function ins_erreur_page(int $code, string $titre, string $detail = ''): void
 }
 
 $fid = isset($_GET['f']) && is_string($_GET['f']) ? $_GET['f'] : '';
+$cle = isset($_GET['k']) && is_string($_GET['k']) ? $_GET['k'] : '';
 
-/* ---------- Liste des formulaires ---------- */
+/* ---------- Liste des formulaires diffusés ---------- */
 if ($fid === '') {
     $liste = ins_liste_formulaires();
     if (count($liste) === 1) {
         $fid = (string)array_key_first($liste);
     } elseif (!$cfg['liste_publique']) {
-        ins_erreur_page(404, 'Formulaire introuvable');
+        ins_erreur_page(404, t('introuvable'));
     } else {
-        ins_entete('Inscriptions');
-        echo '<h1>Inscriptions</h1>';
+        ins_entete(t('liste_titre'));
+        echo '<h1>' . e(t('liste_titre')) . '</h1>';
         if (!$liste) {
-            echo '<p>Aucun formulaire disponible pour le moment.</p>';
+            echo '<p>' . e(t('liste_vide')) . '</p>';
         } else {
             echo '<ul>';
             foreach ($liste as $id => $titre) {
@@ -65,9 +68,18 @@ try {
     $form = ins_charger_formulaire($fid);
 } catch (Throwable $ex) {
     error_log('inscription : ' . $ex->getMessage());
-    ins_erreur_page(404, 'Formulaire introuvable ou mal décrit', $ex->getMessage());
+    // Formulaire inexistant : même réponse qu'un formulaire non diffusé ouvert sans sa clé.
+    $existe = ins_id_valide($fid) && is_file(ins_dossier_formulaires() . '/' . $fid . '.ini');
+    ins_erreur_page(404, t($existe ? 'introuvable_ou_errone' : 'introuvable'), $ex->getMessage());
 }
-$url = '?f=' . rawurlencode($fid);
+// Non diffusé et sans clé de partage valide : on ne révèle pas son existence.
+if (!ins_acces_autorise($form, $cle)) {
+    ins_erreur_page(404, t('introuvable'));
+}
+if ($form['langue'] !== '') {
+    ins_langue($form['langue']);
+}
+$url = ins_url_formulaire($form);
 
 $brut = [];
 $erreurs = [];
@@ -85,15 +97,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($etat !== '') {
         $alerte = $etat;
     } elseif ($motif === 'trop_rapide') {
-        $alerte = 'Envoi trop rapide : vérifiez votre saisie puis renvoyez le formulaire.';
+        $alerte = t('envoi_trop_rapide');
     } elseif ($motif !== '') {
-        $alerte = 'La page a expiré : vérifiez votre saisie puis renvoyez le formulaire.';
+        $alerte = t('page_expiree');
     } elseif (!$erreurs) {
         try {
             [$numero, $erreurs, $alerte] = ins_enregistrer($form, $valeurs);
         } catch (Throwable $ex) {
             error_log('inscription : ' . $ex->getMessage());
-            ins_erreur_page(500, "L'inscription n'a pas pu être enregistrée", $ex->getMessage());
+            ins_erreur_page(500, t('echec_enregistrement'), $ex->getMessage());
         }
         if ($numero !== null) {
             ins_notifier($form, $numero, $valeurs);
@@ -103,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     if ($erreurs && $alerte === '') {
-        $alerte = 'Le formulaire contient des erreurs : merci de les corriger.';
+        $alerte = t('erreurs_a_corriger');
     }
 }
 
@@ -114,12 +126,12 @@ echo '<h1>' . e($form['titre']) . '</h1>';
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {
     $numero = is_string($_GET['merci']) ? $_GET['merci'] : '';
     $sig = isset($_GET['s']) && is_string($_GET['s']) ? $_GET['s'] : '';
-    echo '<div class="ok"><p>' . nl2br(e($form['merci'])) . '</p>';
+    echo '<div class="ok"><p>' . nl2br(e($form['merci'] !== '' ? $form['merci'] : t('merci_defaut'))) . '</p>';
     if ($form['afficher_numero'] && $numero !== '' && $sig !== '' && hash_equals(ins_signer("merci|$fid|$numero"), $sig)) {
-        echo '<p>Numéro d\'inscription : <code>' . e($numero) . '</code><br>'
-            . '<span class="petit">Notez-le : il vous sera demandé pour toute modification ou annulation.</span></p>';
+        echo '<p>' . e(t('numero_reponse')) . ' <code>' . e($numero) . '</code><br>'
+            . '<span class="petit">' . e(t('numero_conserver')) . '</span></p>';
     }
-    echo '</div><p><a class="btn sec" href="' . e($url) . '">Faire une autre inscription</a></p>';
+    echo '</div><p><a class="btn sec" href="' . e($url) . '">' . e(t('autre_reponse')) . '</a></p>';
     ins_pied();
     exit;
 }
@@ -141,7 +153,7 @@ if ($alerte !== '') {
 
 echo '<form method="post" action="' . e($url) . '" novalidate>';
 echo '<input type="hidden" name="_jeton" value="' . e(ins_jeton($fid)) . '">';
-echo '<div class="pot" aria-hidden="true"><label>Ne pas remplir <input type="text" name="site_web" tabindex="-1" autocomplete="off"></label></div>';
+echo '<div class="pot" aria-hidden="true"><label>' . e(t('pot_de_miel')) . ' <input type="text" name="site_web" tabindex="-1" autocomplete="off"></label></div>';
 
 $premier = !$_POST;
 foreach ($form['champs'] as $nom => $c) {
@@ -159,7 +171,7 @@ foreach ($form['champs'] as $nom => $c) {
     $b = $premier ? ($c['defaut'] !== '' ? $c['defaut'] : null) : ($brut[$nom] ?? null);
     $err = $erreurs[$nom] ?? '';
     $idh = 'c_' . $nom;
-    $req = $c['obligatoire'] ? ' <span class="req" title="obligatoire">*</span>' : '';
+    $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
     $aria = $err !== '' ? ' aria-invalid="true" aria-describedby="' . $idh . '_e"' : '';
     $groupe = in_array($c['type'], ['choix', 'cases', 'echelle'], true);
 
@@ -180,7 +192,7 @@ foreach ($form['champs'] as $nom => $c) {
             echo '<textarea id="' . $idh . '" name="' . e($nom) . '"' . $ph . $aria . '>' . e($val) . '</textarea>';
             break;
         case 'choix':
-            foreach ($c['options'] as $i => $opt) {
+            foreach ($c['options'] as $opt) {
                 $ch = $val === $opt ? ' checked' : '';
                 echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '> <span>' . e($opt) . '</span></label>';
             }
@@ -198,7 +210,7 @@ foreach ($form['champs'] as $nom => $c) {
             echo '</div>';
             break;
         case 'liste':
-            echo '<select id="' . $idh . '" name="' . e($nom) . '"' . $aria . '><option value="">— choisir —</option>';
+            echo '<select id="' . $idh . '" name="' . e($nom) . '"' . $aria . '><option value="">' . e(t('choisir')) . '</option>';
             foreach ($c['options'] as $opt) {
                 echo '<option' . ($val === $opt ? ' selected' : '') . '>' . e($opt) . '</option>';
             }
@@ -213,17 +225,17 @@ foreach ($form['champs'] as $nom => $c) {
             break;
         case 'case':
             $ch = ($premier ? ins_oui($val) : ($b !== null && $b !== '')) ? ' checked' : '';
-            echo '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="oui"' . $ch . $aria . '> <span>' . e($c['libelle']) . $req . '</span></label>';
+            echo '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="1"' . $ch . $aria . '> <span>' . e($c['libelle']) . $req . '</span></label>';
             break;
         default:
             $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'date' => 'date'];
-            $t = $types[$c['type']] ?? 'text';
+            $tp = $types[$c['type']] ?? 'text';
             $extra = $c['type'] === 'nombre' ? ' inputmode="decimal"' : '';
             if ($c['type'] === 'date') {
                 $extra .= ($c['min'] !== null ? ' min="' . e($c['min']) . '"' : '') . ($c['max'] !== null ? ' max="' . e($c['max']) . '"' : '');
             }
             $auto = ['email' => ' autocomplete="email"', 'telephone' => ' autocomplete="tel"'][$c['type']] ?? '';
-            echo '<input type="' . $t . '" id="' . $idh . '" name="' . e($nom) . '" value="' . e($val) . '"' . $ph . $extra . $auto . $aria . '>';
+            echo '<input type="' . $tp . '" id="' . $idh . '" name="' . e($nom) . '" value="' . e($val) . '"' . $ph . $extra . $auto . $aria . '>';
     }
     if ($groupe) {
         echo '</fieldset>';
@@ -234,8 +246,8 @@ foreach ($form['champs'] as $nom => $c) {
     echo '</div>';
 }
 
-echo '<p class="petit"><span class="req">*</span> champ obligatoire</p>';
-echo '<p><button type="submit">' . e($form['bouton']) . '</button></p></form>';
+echo '<p class="petit"><span class="req">*</span> ' . e(t('champ_obligatoire')) . '</p>';
+echo '<p><button type="submit">' . e($form['bouton'] !== '' ? $form['bouton'] : t('bouton_defaut')) . '</button></p></form>';
 ?>
 <script>
 /* Affichage conditionnel (« si = » dans le descripteur). Sans JavaScript, tout reste visible
@@ -250,7 +262,7 @@ echo '<p><button type="submit">' . e($form['bouton']) . '</button></p></form>';
     if (!bloc || bloc.classList.contains('cache')) return null;
     var type = bloc.getAttribute('data-type'), res = [];
     bloc.querySelectorAll('input,select,textarea').forEach(function (el) {
-      if (type === 'case') res.push(el.checked ? 'oui' : 'non');
+      if (type === 'case') res.push(el.checked ? '1' : '0');
       else if (el.type === 'radio' || el.type === 'checkbox') { if (el.checked) res.push(el.value); }
       else if (el.value !== '') res.push(el.value);
     });

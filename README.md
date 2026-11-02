@@ -5,7 +5,10 @@ Petit outil pour recueillir des inscriptions (ou les réponses à un sondage) su
 - le formulaire est **décrit dans un fichier texte** (`.ini`) : pas de programmation, pas de base de données ;
 - chaque inscription est ajoutée à un **fichier CSV** qui s'ouvre directement dans Excel, LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) ;
 - plusieurs formulaires peuvent cohabiter (un fichier de description = un formulaire = un fichier de données) ;
-- une page d'administration protégée par mot de passe permet de consulter et télécharger les inscriptions.
+- un formulaire peut être **diffusé** (listé sur la page d'accueil) ou **non diffusé** (ouvert seulement par un lien de partage à clé unique) ;
+- une page d'administration protégée par mot de passe permet de consulter et télécharger les réponses, copier les liens de partage,
+  ajouter, remplacer ou supprimer des formulaires ;
+- l'interface est **traduite** (français, anglais ; d'autres langues s'ajoutent avec un seul fichier).
 
 Il suffit de **PHP 7.4 ou plus récent** (aucune extension particulière, aucune session PHP, aucune base MySQL).
 
@@ -16,16 +19,19 @@ Il suffit de **PHP 7.4 ou plus récent** (aucune extension particulière, aucune
 ```
 inscription/                 ← dossier à copier sur le site
 ├── index.php                ← le formulaire public
-├── admin.php                ← consultation / téléchargement des inscriptions
+├── admin.php                ← administration : réponses, liens de partage, ajout/suppression de formulaires
 ├── emplacement.php          ← indique où se trouve la zone privée
 └── prive/                   ← ZONE PRIVÉE (ne doit pas être lisible depuis le web)
     ├── .htaccess            ← interdit l'accès web au dossier
     ├── config.php           ← réglages (mot de passe admin, séparateur CSV…)
     ├── lib.php              ← le moteur
+    ├── lang/                ← textes de l'interface : fr.php, en.php (une langue = un fichier)
     ├── formulaires/         ← descriptions des formulaires : un fichier .ini par formulaire
-    │   ├── exemple.ini      ← exemple complet : inscription à une journée
-    │   ├── sondage.ini      ← exemple de sondage : questionnaire de satisfaction anonyme
-    │   └── simple.ini       ← exemple minimal, à copier pour démarrer
+    │   ├── exemple.ini      ← exemple complet : inscription à une journée (diffusé)
+    │   ├── sondage.ini      ← questionnaire de satisfaction anonyme (non diffusé : lien de partage)
+    │   ├── meeting-en.ini   ← exemple écrit en anglais, interface en anglais
+    │   ├── simple.ini       ← exemple minimal, à copier pour démarrer
+    │   └── supprimes/       ← formulaires supprimés ou remplacés depuis admin.php (créé tout seul)
     └── donnees/             ← les inscriptions : un fichier .csv par formulaire (créé tout seul)
 ```
 
@@ -37,7 +43,8 @@ inscription/                 ← dossier à copier sur le site
    Vous pouvez renommer le dossier (`inscriptions`, `journee2026`…) : l'adresse change en conséquence.
 2. Le dossier `prive/donnees/` doit être **accessible en écriture** par PHP. C'est le cas par défaut chez la
    plupart des hébergeurs ; sinon, dans FileZilla : clic droit sur `donnees` → *Droits d'accès au fichier* → `755`
-   (ou `775`/`777` si l'enregistrement échoue encore).
+   (ou `775`/`777` si l'enregistrement échoue encore). Pour ajouter des formulaires depuis `admin.php`,
+   il en va de même pour `prive/formulaires/`.
 3. (Si vous utilisez la page d'administration, ce qui est le cas par défaut) ouvrez `https://votre-site.fr/inscription/admin.php`, choisissez un mot de passe : la page affiche une ligne
    à coller dans `prive/config.php` (à la place de `'admin_mot_de_passe' => '',`). Renvoyez `config.php` sur le serveur.
 4. Toujours sur `admin.php`, connectez-vous : un **test automatique** vérifie que les données ne sont pas lisibles
@@ -53,7 +60,8 @@ Un formulaire = un fichier `prive/formulaires/<nom>.ini`, en texte brut **encod�
 (Bloc-notes, Notepad++, gedit, Kate…). Son adresse est `index.php?f=<nom>`.
 Le `<nom>` ne contient que des lettres non accentuées, des chiffres, `-` et `_`.
 
-S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il affiche la liste.
+`index.php` affiche la liste des formulaires **diffusés** (`diffusion = oui`, le défaut) ; s'il n'y en a qu'un,
+il l'affiche directement. Les formulaires non diffusés s'ouvrent par leur lien de partage (voir plus bas).
 
 ### Règles d'écriture
 
@@ -71,14 +79,15 @@ S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il a
 |-------------|------|--------|
 | `titre`     | titre affiché en haut de la page | le nom du fichier |
 | `intro`     | texte d'introduction | — |
-| `merci`     | message affiché après l'inscription | « Merci, votre inscription est enregistrée. » |
-| `bouton`    | texte du bouton d'envoi | « Envoyer l'inscription » |
+| `merci`     | message affiché après l'envoi | « Merci, votre réponse est enregistrée. » |
+| `bouton`    | texte du bouton d'envoi | « Envoyer » |
 | `fichier`   | nom du fichier de données (`donnees/<fichier>.csv`) | le nom du formulaire |
 | `ouverture` | date/heure d'ouverture : `"2026-11-15"` ou `"2026-11-15 09:00"` | — |
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal d'inscriptions (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque inscription (séparées par des virgules) | — |
-| `cache`     | `oui` = ne pas afficher ce formulaire dans la liste (accessible seulement par son adresse) | non |
+| `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le lien de partage | oui |
+| `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
 | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
 
 ### Types de champs
@@ -189,10 +198,49 @@ la page affiche « Formulaire introuvable ou mal décrit » ; le détail de l'er
 Après modification d'un fichier sur le serveur, attendez quelques secondes avant de recharger la page
 (certains hébergeurs gardent les fichiers PHP en cache un court instant).
 
+### Diffusion et lien de partage
+
+- `diffusion = oui` (défaut) : le formulaire figure dans la liste de `index.php` et s'ouvre aussi par `index.php?f=<nom>`.
+- `diffusion = non` : il n'apparaît **nulle part** ; `index.php?f=<nom>` répond « Page introuvable ».
+  Il ne s'ouvre qu'avec son **lien de partage**, qui contient une clé unique :
+  `https://votre-site.fr/inscription/index.php?f=sondage&k=352478770464ea7d`.
+  Ce lien est affiché dans `admin.php`, avec un bouton **Copier** : envoyez-le aux seules personnes concernées.
+
+La clé est calculée à partir de la clé secrète du site (`prive/donnees/.secret`) et du nom du formulaire :
+elle ne peut pas être devinée, elle ne change pas tant que ces deux éléments ne changent pas, et elle diffère d'un site à l'autre.
+Pour **révoquer** un lien, renommez le formulaire (nouveau nom de fichier `.ini`) : l'ancien lien cesse de fonctionner.
+Supprimer `.secret` change d'un coup les liens de tous les formulaires non diffusés.
+
+L'ancienne écriture `cache = oui` reste acceptée et équivaut à `diffusion = non`.
+
+### Écrire un formulaire en anglais
+
+Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec le français :
+
+| français | anglais | | français | anglais |
+|----------|---------|-|----------|---------|
+| `[formulaire]` | `[form]` | | `libelle` | `label` |
+| `titre` | `title` | | `aide` | `help` |
+| `merci` | `thanks` | | `obligatoire` | `required` |
+| `bouton` | `button` | | `defaut` | `default` |
+| `fichier` | `file` | | `exemple` | `placeholder` |
+| `ouverture` / `fermeture` | `opens` / `closes` | | `gauche` / `droite` | `left` / `right` |
+| `places` | `limit` | | `si` | `if` |
+| `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
+| `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
+| `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
+| `langue` | `language` | | `cases`, `case` | `checkboxes`, `consent` |
+| | | | `echelle`, `titre` | `scale`, `heading` |
+
+Voir `prive/formulaires/meeting-en.ini`. Avec `language = en`, les boutons et messages sont en anglais et une case cochée
+est enregistrée `yes` / `no` (au lieu de `oui` / `non`).
+
 ## 4. Récupérer les inscriptions
 
 **Par la page d'administration** (si elle est active : `'admin_actif' => true`, réglage par défaut) — `https://votre-site.fr/inscription/admin.php` :
-nombre d'inscrits, état (ouvert, clos, complet), bouton **Télécharger** (fichier `.csv`) et **Voir** (tableau à l'écran).
+pour chaque formulaire : nombre de réponses, état (ouvert, clos, complet), diffusé ou non, **lien de partage** avec bouton **Copier**,
+boutons **Télécharger** (fichier `.csv`) et **Voir** (tableau à l'écran), téléchargement du descripteur `.ini`.
+La page propose aussi le choix de la langue (English / Français).
 
 **Par FTP** — dans `prive/donnees/` : un fichier `<fichier>.csv` par formulaire.
 Si vous ne voulez récupérer les données que par FTP, désactivez la page d'administration dans `prive/config.php` :
@@ -215,8 +263,33 @@ Format des fichiers :
 (les deux restent téléchargeables depuis `admin.php`). Changer un libellé ou une option ne crée pas de nouveau fichier.
 
 **Supprimer ou corriger une inscription** : téléchargez le fichier par FTP, modifiez-le (en gardant le format CSV,
-séparateur `;`, UTF-8), renvoyez-le ; ou supprimez-le pour repartir de zéro.
+séparateur `;`, UTF-8), renvoyez-le ; ou supprimez-le pour repartir de zéro (par FTP, ou bouton **Supprimer les réponses** de `admin.php`).
 Pensez à supprimer les données quand elles ne sont plus utiles (RGPD).
+
+### Ajouter, remplacer ou supprimer un formulaire depuis `admin.php`
+
+Plus besoin de FTP pour gérer les formulaires (réglage `'admin_gestion' => true`, par défaut) :
+
+- **Ajouter** : section « Ajouter ou remplacer un formulaire », choisir un fichier `.ini` sur votre ordinateur.
+  Le nom dans l'adresse est celui du fichier (`reunion.ini` → `index.php?f=reunion`), ou celui que vous indiquez.
+- **Modifier** : bouton **Télécharger le descripteur (.ini)**, corriger le fichier, le renvoyer en cochant **Remplacer**.
+  L'ancienne version est conservée dans `prive/formulaires/supprimes/`. Si des champs ont été ajoutés, retirés ou renommés,
+  la page prévient que le fichier de réponses actuel sera archivé à la prochaine réponse.
+- **Supprimer un formulaire** : lien **Supprimer le formulaire**, cocher **Je confirme**. Le descripteur est déplacé dans
+  `prive/formulaires/supprimes/` (récupérable par FTP) ; les réponses déjà reçues sont **conservées** et restent téléchargeables
+  (rubrique « Autres fichiers »).
+- **Supprimer des réponses** : lien **Supprimer les réponses**, cocher **Je confirme** : le fichier CSV est **effacé définitivement**.
+
+Garde-fous :
+- le fichier envoyé est **entièrement vérifié avant d'être installé** (syntaxe, types, options, conditions, UTF-8) ;
+  en cas d'erreur, rien n'est modifié et le message indique l'erreur (champ ou ligne en cause) ;
+- 200 Ko au plus, nom limité à lettres non accentuées, chiffres, `-` et `_`, extension `.ini` imposée :
+  le fichier ne peut jamais devenir un programme exécutable ;
+- la suite de caractères `${` est refusée (elle permettrait de lire des variables du serveur) ;
+- chaque action est protégée par un jeton lié à la connexion (une page piégée ne peut pas la déclencher à votre place) ;
+- PHP doit pouvoir écrire dans `prive/formulaires/` ; sinon, la page l'indique et la gestion reste possible par FTP.
+
+Avec `'admin_gestion' => false`, `admin.php` ne sert plus qu'à consulter et télécharger : les boutons d'ajout et de suppression disparaissent.
 
 ## 5. Mettre les données dans une zone privée
 
@@ -225,7 +298,7 @@ Les inscriptions contiennent des données personnelles : personne ne doit pouvoi
 
 ### a) Par défaut : `.htaccess` (Apache)
 
-Les dossiers `prive/`, `prive/donnees/` et `prive/formulaires/` contiennent un fichier `.htaccess` qui interdit
+Les dossiers `prive/`, `prive/donnees/`, `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
 tout accès web. Cela fonctionne chez la plupart des hébergeurs mutualisés (serveurs Apache ou compatibles).
 
 Attention : les fichiers commençant par un point sont parfois masqués ou non envoyés par le client FTP.
@@ -285,12 +358,14 @@ avec une directive `<Files admin.php>` dans un `.htaccess` à côté.
 
 | clé | rôle |
 |-----|------|
+| `langue` | langue de l'interface par défaut : `fr` (défaut) ou `en` |
 | `admin_actif` | `true` (défaut) : page `admin.php` active ; `false` : désactivée, récupération par FTP uniquement |
+| `admin_gestion` | `true` (défaut) : `admin.php` peut ajouter, remplacer, supprimer des formulaires et des réponses ; `false` : consultation seule |
 | `admin_mot_de_passe` | mot de passe chiffré de `admin.php` (généré par `admin.php` lui-même) |
 | `dossier_formulaires`, `dossier_donnees` | emplacement des descripteurs et des données (par défaut dans la zone privée) |
 | `separateur` | `;` (Excel français) ou `,` |
 | `fuseau` | fuseau horaire des dates (`Europe/Paris`) |
-| `liste_publique` | `false` : `index.php` sans `?f=` n'affiche pas la liste des formulaires |
+| `liste_publique` | `false` : `index.php` sans `?f=` n'affiche aucune liste, même des formulaires diffusés |
 | `longueur_max` | longueur maximale d'une réponse |
 | `expediteur` | adresse d'expédition des notifications (souvent obligatoirement une adresse de votre domaine) |
 | `debug` | `true` : affiche le détail des erreurs (à remettre à `false` ensuite) |
@@ -303,8 +378,10 @@ avec une directive `<Files admin.php>` dans un `.htaccess` à côté.
 - Validation côté serveur de chaque champ (formats, options autorisées, conditions), même si le navigateur est contourné.
 - Écriture sous verrou (`flock`) : deux inscriptions simultanées ne se mélangent pas, et la limite de places est respectée.
 - Échappement de tout l'affichage HTML ; neutralisation des formules Excel dans le CSV.
+- Formulaires non diffusés : introuvables sans la clé de partage (réponse identique à un formulaire inexistant).
+- Administration : mot de passe haché, essais ralentis, jeton sur chaque action, fichiers téléversés vérifiés avant installation.
 - Une clé secrète est créée automatiquement dans `donnees/.secret` au premier usage ; la supprimer invalide les
-  formulaires ouverts et déconnecte l'administration (sans autre conséquence).
+  formulaires ouverts, déconnecte l'administration et **change les liens de partage** des formulaires non diffusés.
 
 ## 8. Dépannage
 
@@ -313,6 +390,22 @@ avec une directive `<Files admin.php>` dans un `.htaccess` à côté.
 | « Formulaire indisponible : installation incomplète » | `emplacement.php` ne pointe pas vers le dossier contenant `lib.php` |
 | « L'inscription n'a pas pu être enregistrée » | le dossier `donnees/` n'est pas inscriptible (voir § 2, étape 2) |
 | « Formulaire introuvable ou mal décrit » | erreur dans le `.ini` : le détail est affiché sur `admin.php` |
+| « Page introuvable » | adresse erronée, ou formulaire non diffusé ouvert sans son lien de partage |
 | « La page a expiré » | formulaire resté ouvert plus de 24 h : renvoyer suffit (la saisie est conservée) |
 | accents incorrects dans Excel | ouvrir via *Données* → *À partir d'un fichier texte/CSV*, encodage UTF-8 |
 | pas de courriel de notification | `mail()` désactivé chez l'hébergeur, ou `expediteur` hors de votre domaine |
+| un lien de partage répond « Page introuvable » | formulaire renommé ou supprimé, ou fichier `.secret` effacé : recopiez le lien depuis `admin.php` |
+| « PHP ne peut pas écrire dans … formulaires » | donner les droits d'écriture au dossier `prive/formulaires/` (§ 2, étape 2) |
+
+## 9. Langues
+
+L'interface (boutons, messages d'erreur, page d'administration, courriel de notification) existe en **français** et en **anglais** :
+
+- langue par défaut : `'langue' => 'fr'` dans `prive/config.php` ;
+- langue d'un formulaire : `langue = en` dans son descripteur (les textes du formulaire eux-mêmes sont écrits par vous,
+  dans la langue de votre choix) ;
+- page d'administration : liens **English / Français** en haut de page (choix mémorisé par le navigateur).
+
+**Ajouter une langue** (allemand, espagnol…) : copier `prive/lang/fr.php` (ou `en.php`) sous le nom `de.php`, `es.php`…,
+traduire les textes de droite sans toucher aux noms de gauche ni aux repères `{n}`, `{titre}`…, puis l'envoyer sur le serveur.
+La langue apparaît aussitôt dans `admin.php` et peut être utilisée par `langue = de`. Un texte manquant est affiché en français.
