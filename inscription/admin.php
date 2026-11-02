@@ -180,6 +180,8 @@ if ($action === 'ini') {
 $message = '';
 $alerte = '';
 $detail = '';
+$nouveauxAcces = null;   // accès qui viennent d'être créés ou renouvelés (secrets affichés une seule fois)
+$ouvrirAcces = '';       // formulaire dont la rubrique « Accès » reste ouverte
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $act = (string)$_POST['action'];
     try {
@@ -265,7 +267,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             header('Location: admin.php?' . http_build_query(['ok' => 'csv_supprime', 'id' => $n]), true, 303);
             exit;
         }
-        throw new RuntimeException(t('introuvable'));
+        if ($act === 'acces_generer' || $act === 'acces_modifier') {
+            $id = (string)($_POST['id'] ?? '');
+            $formAcces = ins_charger_formulaire($id);
+            if ($formAcces['acces'] === '') {
+                throw new RuntimeException(t('introuvable'));
+            }
+            if ($act === 'acces_generer') {
+                // Un accès par ligne (nom, adresse…), sinon un nombre d'accès sans nom
+                $noms = array_values(array_filter(array_map('trim', preg_split('/\R/', (string)($_POST['noms'] ?? '')) ?: []), 'strlen'));
+                if (!$noms) {
+                    $noms = array_fill(0, max(0, min(500, (int)($_POST['nombre'] ?? 0))), '');
+                }
+                if (!$noms || count($noms) > 500) {
+                    throw new RuntimeException(t('adm_acces_nombre'));
+                }
+                $noms = array_map(function ($n) { return mb_substr($n, 0, 200); }, $noms);
+                $nouveauxAcces = ['form' => $formAcces, 'liste' => ins_creer_acces($formAcces, $noms)];
+            } else {
+                $op = (string)($_POST['op'] ?? '');
+                $aid = (string)($_POST['acces'] ?? '');
+                $clair = ins_modifier_acces($formAcces, $aid, $op);
+                if ($clair !== null) {
+                    $a = ins_lire_acces($formAcces)[$aid];
+                    $nouveauxAcces = ['form' => $formAcces, 'liste' => [['identifiant' => $aid, 'nom' => $a['nom'], 'secret' => $clair]]];
+                } else {
+                    $message = t($op === 'revoquer' ? 'adm_acces_revoque' : 'adm_acces_reactive', ['id' => $aid]);
+                }
+            }
+            $ouvrirAcces = $id;
+        } else {
+            throw new RuntimeException(t('introuvable'));
+        }
     } catch (Throwable $ex) {
         $alerte = $ex->getMessage();
     }
@@ -291,6 +324,36 @@ function ins_bouton_suppression(string $action, string $champ, string $valeur, s
         . '<p class="petit">' . e(t($action === 'supprimer' ? 'adm_suppr_form_expl' : 'adm_suppr_csv_expl')) . '</p>'
         . '<label class="opt"><input type="checkbox" name="confirmer" value="1"> <span>' . e(t('adm_confirmer')) . '</span></label>'
         . '<button class="dang">' . e($libelle) . '</button></form></details>';
+}
+
+/** CSV (identifiant, nom, mot de passe, lien) des accès qui viennent d'être créés, en lien de téléchargement. */
+function ins_csv_nouveaux_acces(array $form, array $liste): string
+{
+    $sep = (string)ins_config()['separateur'];
+    $h = fopen('php://temp', 'w+b');
+    fwrite($h, "\xEF\xBB\xBF");
+    $lien = $form['acces'] === 'lien';
+    fputcsv($h, $lien ? ['identifiant', 'nom', 'lien'] : ['identifiant', 'nom', 'mot_de_passe', 'lien'], $sep, '"', '');
+    foreach ($liste as $a) {
+        $url = ins_lien_acces($form, $a['identifiant'], $a['secret']);
+        fputcsv($h, $lien ? [$a['identifiant'], ins_csv_sur($a['nom']), $url] : [$a['identifiant'], ins_csv_sur($a['nom']), $a['secret'], $url], $sep, '"', '');
+    }
+    rewind($h);
+    $csv = (string)stream_get_contents($h);
+    fclose($h);
+    return 'data:text/csv;charset=utf-8;base64,' . base64_encode($csv);
+}
+
+/** Petit bouton POST d'action sur un accès. */
+function ins_bouton_acces(string $fid, string $aid, string $op, string $libelle, string $jeton, string $classe = 'sec'): string
+{
+    return '<form method="post" style="display:inline">'
+        . '<input type="hidden" name="_jeton" value="' . e($jeton) . '">'
+        . '<input type="hidden" name="action" value="acces_modifier">'
+        . '<input type="hidden" name="id" value="' . e($fid) . '">'
+        . '<input type="hidden" name="acces" value="' . e($aid) . '">'
+        . '<input type="hidden" name="op" value="' . e($op) . '">'
+        . '<button class="' . e($classe) . '" style="padding:.2rem .6rem;font-size:.85rem">' . e($libelle) . '</button></form>';
 }
 
 /* ---------- Affichage d'un fichier de réponses ---------- */
@@ -324,6 +387,58 @@ if ($action === 'voir') {
     exit;
 }
 
+/** Rubrique « Accès » d'un formulaire à diffusion restreinte. */
+function ins_rubrique_acces(array $form, bool $gestion, string $jeton, bool $ouverte): string
+{
+    $tous = ins_lire_acces($form);
+    $repondus = count(array_filter($tous, function ($a) { return $a['repondu'] !== ''; }));
+    $actifs = count(array_filter($tous, function ($a) { return $a['etat'] === 'actif'; }));
+    $h = '<div class="petit" style="margin:.4rem 0">' . e(t('adm_acces_resume', ['n' => count($tous), 'actifs' => $actifs, 'repondus' => $repondus]))
+        . (count($tous) === 0 ? ' <b>' . e(t('adm_acces_aucun')) . '</b>' : '') . '</div>';
+    $h .= '<details' . ($ouverte ? ' open' : '') . '><summary>' . e(t('adm_acces_gerer')) . '</summary>';
+    if ($tous) {
+        $h .= '<div class="defile" style="max-height:24rem;margin:.5rem 0"><table><thead><tr><th>' . e(t('acces_identifiant')) . '</th><th>'
+            . e(t('adm_acces_nom')) . '</th><th>' . e(t('adm_acces_etat')) . '</th><th>' . e(t('adm_acces_reponse')) . '</th>'
+            . ($gestion ? '<th></th>' : '') . '</tr></thead><tbody>';
+        foreach ($tous as $a) {
+            if ($a['etat'] !== 'actif') {
+                $etat = t('adm_acces_etat_revoque');
+            } elseif ($a['bloque'] !== '' && (int)$a['bloque'] > time()) {
+                $etat = t('adm_acces_etat_bloque', ['date' => ins_date_lisible((int)$a['bloque'])]);
+            } else {
+                $etat = t('adm_acces_etat_actif');
+            }
+            $rep = $a['repondu'] === '' ? '—' : t('adm_acces_repondu', ['date' => ins_date_lisible((int)strtotime($a['repondu']))])
+                . ($a['modifie'] !== '' ? ' · ' . t('adm_acces_modifie', ['date' => ins_date_lisible((int)strtotime($a['modifie']))]) : '');
+            $h .= '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td><td>' . e($etat) . '</td><td>' . e($rep) . '</td>';
+            if ($gestion) {
+                $bloque = $a['bloque'] !== '' && (int)$a['bloque'] > time();
+                $h .= '<td class="actions">'
+                    . ($a['etat'] === 'actif' ? ins_bouton_acces($form['id'], $a['identifiant'], 'revoquer', t('adm_acces_revoquer'), $jeton, 'dang') : '')
+                    . ($a['etat'] !== 'actif' || $bloque ? ins_bouton_acces($form['id'], $a['identifiant'], 'reactiver', t('adm_acces_reactiver'), $jeton) : '')
+                    . ' ' . ins_bouton_acces($form['id'], $a['identifiant'], 'renouveler',
+                        t($form['acces'] === 'lien' ? 'adm_acces_nouveau_lien' : 'adm_acces_nouveau_mdp'), $jeton)
+                    . '</td>';
+            }
+            $h .= '</tr>';
+        }
+        $h .= '</tbody></table></div>';
+    }
+    if ($gestion) {
+        $h .= '<form method="post" class="champ">'
+            . '<input type="hidden" name="_jeton" value="' . e($jeton) . '">'
+            . '<input type="hidden" name="action" value="acces_generer">'
+            . '<input type="hidden" name="id" value="' . e($form['id']) . '">'
+            . '<label class="lib" for="noms_' . e($form['id']) . '">' . e(t('adm_acces_noms')) . '</label>'
+            . '<textarea id="noms_' . e($form['id']) . '" name="noms" placeholder="' . e(t('adm_acces_noms_exemple')) . '"></textarea>'
+            . '<label class="lib" for="nb_' . e($form['id']) . '" style="margin-top:.6rem">' . e(t('adm_acces_ou_nombre')) . '</label>'
+            . '<input type="number" id="nb_' . e($form['id']) . '" name="nombre" min="1" max="500" style="max-width:8rem">'
+            . '<p class="petit">' . e(t($form['acces'] === 'lien' ? 'adm_acces_aide_lien' : 'adm_acces_aide')) . '</p>'
+            . '<button>' . e(t('adm_acces_generer')) . '</button></form>';
+    }
+    return $h . '</details>';
+}
+
 /* ---------- Tableau de bord ---------- */
 ins_entete(t('adm_titre_long'));
 $langs = strip_tags(ins_choix_langue(), '<a><b>');
@@ -334,6 +449,22 @@ if ($message !== '') {
 }
 if ($alerte !== '') {
     echo '<div class="alerte">' . e($alerte) . ($detail !== '' ? '<br><b>' . e($detail) . '</b>' : '') . '</div>';
+}
+if ($nouveauxAcces !== null) {
+    $fa = $nouveauxAcces['form'];
+    $modeLien = $fa['acces'] === 'lien';
+    echo '<div class="ok"><b>' . e(t('adm_acces_crees', ['n' => count($nouveauxAcces['liste']), 'titre' => $fa['titre']])) . '</b>'
+        . '<p>' . e(t($modeLien ? 'adm_acces_une_fois_lien' : 'adm_acces_une_fois')) . '</p>'
+        . '<p><a class="btn" download="acces-' . e($fa['id']) . '-' . date('Ymd-His') . '.csv" href="'
+        . e(ins_csv_nouveaux_acces($fa, $nouveauxAcces['liste'])) . '">' . e(t('adm_acces_telecharger')) . '</a></p>'
+        . '<div class="defile" style="max-height:20rem"><table><thead><tr><th>' . e(t('acces_identifiant')) . '</th><th>' . e(t('adm_acces_nom')) . '</th>'
+        . ($modeLien ? '' : '<th>' . e(t('acces_mot_de_passe')) . '</th>') . '<th>' . e(t('adm_acces_lien')) . '</th></tr></thead><tbody>';
+    foreach ($nouveauxAcces['liste'] as $a) {
+        echo '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td>'
+            . ($modeLien ? '' : '<td><code>' . e($a['secret']) . '</code></td>')
+            . '<td style="word-break:break-all">' . e(ins_lien_acces($fa, $a['identifiant'], $a['secret'])) . '</td></tr>';
+    }
+    echo '</tbody></table></div></div>';
 }
 
 // Auto-test : la zone privée est-elle lisible depuis le web ?
@@ -385,21 +516,29 @@ foreach ($formulaires as $id => $form) {
     $nb = ins_nombre_inscrits($form);
     $etat = ins_etat($form);
     $lien = ins_url_absolue($form);
-    echo '<b>' . e($form['titre']) . '</b> <span class="petit">(' . e($id) . '.ini)</span> '
-        . ($form['diffusion']
-            ? '<span class="etiq">' . e(t('adm_diffuse')) . '</span>'
-            : '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>') . '<br>';
+    if ($form['acces'] !== '') {
+        $etiquette = '<span class="etiq prive">' . e(t($form['acces'] === 'lien' ? 'adm_acces_lien_seul' : 'adm_acces_personnel')) . '</span>';
+    } elseif ($form['diffusion']) {
+        $etiquette = '<span class="etiq">' . e(t('adm_diffuse')) . '</span>';
+    } else {
+        $etiquette = '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>';
+    }
+    echo '<b>' . e($form['titre']) . '</b> <span class="petit">(' . e($id) . '.ini)</span> ' . $etiquette . '<br>';
     echo e(t('adm_nb_reponses', ['n' => $nb])) . ($form['places'] ? ' / ' . e(t('adm_places', ['n' => $form['places']])) : '');
     echo ' · ' . ($etat === '' ? e(t('adm_ouvert')) : e($etat));
     if (ins_multilingue($form)) {
         $noms = array_map(function ($lg) { return ins_textes($lg)['nom_langue'] ?? $lg; }, $form['langues']);
         echo ' · ' . e(t('adm_langues', ['langues' => implode(', ', $noms)]));
     }
-    echo '<div class="lien"><input type="text" readonly value="' . e($lien) . '" aria-label="' . e(t('adm_lien_partage')) . '">'
-        . '<button type="button" class="sec copier">' . e(t('adm_copier')) . '</button>'
-        . '<a class="btn sec" href="' . e($lien) . '" target="_blank" rel="noopener">' . e(t('adm_ouvrir')) . '</a></div>';
-    if (!$form['diffusion']) {
-        echo '<div class="petit">' . e(t('adm_lien_explication')) . '</div>';
+    if ($form['acces'] !== '') {
+        echo ins_rubrique_acces($form, $gestion, $jetonAdmin, $ouvrirAcces === $id);
+    } else {
+        echo '<div class="lien"><input type="text" readonly value="' . e($lien) . '" aria-label="' . e(t('adm_lien_partage')) . '">'
+            . '<button type="button" class="sec copier">' . e(t('adm_copier')) . '</button>'
+            . '<a class="btn sec" href="' . e($lien) . '" target="_blank" rel="noopener">' . e(t('adm_ouvrir')) . '</a></div>';
+        if (!$form['diffusion']) {
+            echo '<div class="petit">' . e(t('adm_lien_explication')) . '</div>';
+        }
     }
     if ($nb > 0 || is_file($dir . '/' . $n)) {
         echo '<a class="btn" href="?a=telecharger&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_telecharger')) . ' ' . e($n) . '</a> '
