@@ -15,7 +15,7 @@ if (!defined('INS_PRIVE')) {
 const INS_COLONNES_FIXES = ['numero', 'date'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
-    'choix', 'liste', 'cases', 'case', 'titre', 'info',
+    'choix', 'liste', 'cases', 'case', 'echelle', 'titre', 'info',
 ];
 // Types qui ne produisent pas de colonne dans le fichier de données
 const INS_TYPES_DECORATIFS = ['titre', 'info'];
@@ -23,7 +23,7 @@ const INS_TYPES_DECORATIFS = ['titre', 'info'];
 const INS_ALIAS_TYPES = [
     'text' => 'texte', 'textarea' => 'texte_long', 'zone' => 'texte_long', 'paragraphe' => 'texte_long',
     'mail' => 'email', 'courriel' => 'email', 'tel' => 'telephone', 'téléphone' => 'telephone',
-    'number' => 'nombre', 'radio' => 'choix', 'select' => 'liste', 'checkbox' => 'cases',
+    'number' => 'nombre', 'radio' => 'choix', 'note' => 'echelle', 'échelle' => 'echelle', 'select' => 'liste', 'checkbox' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'section' => 'titre', 'texte_info' => 'info',
 ];
 
@@ -41,6 +41,7 @@ function ins_config(): array
             'separateur'          => ';',
             'fuseau'              => 'Europe/Paris',
             'liste_publique'      => true,
+            'admin_actif'         => true,
             'longueur_max'        => 2000,
             'admin_mot_de_passe'  => '',
             'expediteur'          => '',
@@ -142,7 +143,7 @@ function ins_minuscules(string $s): string
     return mb_strtolower(trim($s), 'UTF-8');
 }
 
-/** Empêche l'interprétation d'une valeur comme formule par Excel / LibreOffice. */
+/** Empêche l'interprétation d'une valeur comme formule par Excel / LibreOffice / GridCraft. */
 function ins_csv_sur(string $s): string
 {
     return ($s !== '' && strpos("=+-@\t\r", $s[0]) !== false) ? "'" . $s : $s;
@@ -207,6 +208,7 @@ function ins_charger_formulaire(string $id): array
         'places'     => max(0, (int)($g['places'] ?? 0)),
         'notifier'   => trim((string)($g['notifier'] ?? '')),
         'cache'      => ins_oui($g['cache'] ?? ''),
+        'afficher_numero' => ins_oui($g['afficher_numero'] ?? 'oui'),
         'champs'     => [],
     ];
     if (!ins_id_valide($form['fichier'])) {
@@ -231,6 +233,9 @@ function ins_charger_formulaire(string $id): array
         if (isset($p['options']) && trim((string)$p['options']) !== '') {
             $options = array_values(array_filter(array_map('trim', explode('|', (string)$p['options'])), 'strlen'));
         }
+        if ($type === 'echelle' && !$options) {
+            $options = ['1', '2', '3', '4', '5'];
+        }
         if (in_array($type, ['choix', 'liste', 'cases'], true) && count($options) < 1) {
             throw new RuntimeException("$id.ini : [$nom] de type $type demande « options = \"A | B | C\" »");
         }
@@ -246,6 +251,8 @@ function ins_charger_formulaire(string $id): array
             'max'         => isset($p['max']) && $p['max'] !== '' ? (string)$p['max'] : null,
             'unique'      => ins_oui($p['unique'] ?? ''),
             'exemple'     => trim((string)($p['exemple'] ?? '')),
+            'gauche'      => trim((string)($p['gauche'] ?? '')),
+            'droite'      => trim((string)($p['droite'] ?? '')),
             'si'          => [],
         ];
         if (isset($p['si']) && trim((string)$p['si']) !== '') {
@@ -430,6 +437,7 @@ function ins_valider(array $form, array $post): array
         $err = '';
         switch ($c['type']) {
             case 'choix':
+            case 'echelle':
             case 'liste':
                 $sel = ins_choisis($c, is_array($b) ? null : $b);
                 $v = $sel[0] ?? '';
@@ -743,10 +751,15 @@ textarea{min-height:6rem;resize:vertical}
 .info{background:#eef4fa;border-radius:6px;padding:.7rem 1rem}
 .pot{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
 .cache{display:none}
+.echelle{display:inline-block;max-width:100%}
+.echelle .notes{display:flex;flex-wrap:wrap;gap:.2rem}
+.echelle .opt{flex-direction:column;align-items:center;gap:0;margin:0;min-width:2.4rem}
+.echelle .bouts{display:flex;justify-content:space-between;gap:1rem;font-size:.88rem;color:#57606a;margin-top:.2rem}
 table{border-collapse:collapse;background:#fff;font-size:.9rem;width:100%}
 th,td{border:1px solid var(--bord);padding:.3rem .5rem;text-align:left;vertical-align:top}
 th{background:#e9eef3;position:sticky;top:0}
 .defile{overflow:auto;max-height:75vh}
 .petit{font-size:.88rem;color:#57606a}
+@media (max-width:30rem){.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}form .champ{padding:.7rem .7rem}}
 CSS;
 }

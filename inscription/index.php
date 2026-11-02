@@ -115,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {
     $numero = is_string($_GET['merci']) ? $_GET['merci'] : '';
     $sig = isset($_GET['s']) && is_string($_GET['s']) ? $_GET['s'] : '';
     echo '<div class="ok"><p>' . nl2br(e($form['merci'])) . '</p>';
-    if ($numero !== '' && $sig !== '' && hash_equals(ins_signer("merci|$fid|$numero"), $sig)) {
+    if ($form['afficher_numero'] && $numero !== '' && $sig !== '' && hash_equals(ins_signer("merci|$fid|$numero"), $sig)) {
         echo '<p>Numéro d\'inscription : <code>' . e($numero) . '</code><br>'
             . '<span class="petit">Notez-le : il vous sera demandé pour toute modification ou annulation.</span></p>';
     }
@@ -161,7 +161,7 @@ foreach ($form['champs'] as $nom => $c) {
     $idh = 'c_' . $nom;
     $req = $c['obligatoire'] ? ' <span class="req" title="obligatoire">*</span>' : '';
     $aria = $err !== '' ? ' aria-invalid="true" aria-describedby="' . $idh . '_e"' : '';
-    $groupe = in_array($c['type'], ['choix', 'cases'], true);
+    $groupe = in_array($c['type'], ['choix', 'cases', 'echelle'], true);
 
     echo '<div class="champ' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="' . e($c['type']) . '"' . $si . '>';
     if ($c['type'] !== 'case') {
@@ -184,6 +184,18 @@ foreach ($form['champs'] as $nom => $c) {
                 $ch = $val === $opt ? ' checked' : '';
                 echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '> <span>' . e($opt) . '</span></label>';
             }
+            break;
+        case 'echelle':
+            echo '<div class="echelle"><div class="notes">';
+            foreach ($c['options'] as $opt) {
+                $ch = $val === $opt ? ' checked' : '';
+                echo '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '><span>' . e($opt) . '</span></label>';
+            }
+            echo '</div>';
+            if ($c['gauche'] !== '' || $c['droite'] !== '') {
+                echo '<div class="bouts"><span>' . e($c['gauche']) . '</span><span>' . e($c['droite']) . '</span></div>';
+            }
+            echo '</div>';
             break;
         case 'liste':
             echo '<select id="' . $idh . '" name="' . e($nom) . '"' . $aria . '><option value="">— choisir —</option>';

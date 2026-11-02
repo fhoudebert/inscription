@@ -1,9 +1,9 @@
 # inscription — formulaire d'inscription générique
 
-Petit outil pour recueillir des inscriptions sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…) :
+Petit outil pour recueillir des inscriptions (ou les réponses à un sondage) sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…) :
 
 - le formulaire est **décrit dans un fichier texte** (`.ini`) : pas de programmation, pas de base de données ;
-- chaque inscription est ajoutée à un **fichier CSV** qui s'ouvre directement dans Excel ou LibreOffice Calc ;
+- chaque inscription est ajoutée à un **fichier CSV** qui s'ouvre directement dans Excel, LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) ;
 - plusieurs formulaires peuvent cohabiter (un fichier de description = un formulaire = un fichier de données) ;
 - une page d'administration protégée par mot de passe permet de consulter et télécharger les inscriptions.
 
@@ -23,7 +23,8 @@ inscription/                 ← dossier à copier sur le site
     ├── config.php           ← réglages (mot de passe admin, séparateur CSV…)
     ├── lib.php              ← le moteur
     ├── formulaires/         ← descriptions des formulaires : un fichier .ini par formulaire
-    │   ├── exemple.ini      ← exemple complet (tous les types de champs)
+    │   ├── exemple.ini      ← exemple complet : inscription à une journée
+    │   ├── sondage.ini      ← exemple de sondage : questionnaire de satisfaction anonyme
     │   └── simple.ini       ← exemple minimal, à copier pour démarrer
     └── donnees/             ← les inscriptions : un fichier .csv par formulaire (créé tout seul)
 ```
@@ -37,7 +38,7 @@ inscription/                 ← dossier à copier sur le site
 2. Le dossier `prive/donnees/` doit être **accessible en écriture** par PHP. C'est le cas par défaut chez la
    plupart des hébergeurs ; sinon, dans FileZilla : clic droit sur `donnees` → *Droits d'accès au fichier* → `755`
    (ou `775`/`777` si l'enregistrement échoue encore).
-3. Ouvrez `https://votre-site.fr/inscription/admin.php`, choisissez un mot de passe : la page affiche une ligne
+3. (Si vous utilisez la page d'administration, ce qui est le cas par défaut) ouvrez `https://votre-site.fr/inscription/admin.php`, choisissez un mot de passe : la page affiche une ligne
    à coller dans `prive/config.php` (à la place de `'admin_mot_de_passe' => '',`). Renvoyez `config.php` sur le serveur.
 4. Toujours sur `admin.php`, connectez-vous : un **test automatique** vérifie que les données ne sont pas lisibles
    depuis le web (voir § 5). Si un message rouge apparaît, suivez le § 5.
@@ -78,6 +79,7 @@ S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il a
 | `places`    | nombre maximal d'inscriptions (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque inscription (séparées par des virgules) | — |
 | `cache`     | `oui` = ne pas afficher ce formulaire dans la liste (accessible seulement par son adresse) | non |
+| `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
 
 ### Types de champs
 
@@ -93,6 +95,7 @@ S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il a
 | `liste`      | liste déroulante : une réponse parmi `options` | la réponse choisie |
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
 | `case`       | une case unique (accord, consentement RGPD…) | `oui` / `non` |
+| `echelle`    | note sur une ligne (1 à 5 par défaut, ou les valeurs de `options`), avec textes `gauche` / `droite` aux extrémités | la note choisie |
 | `titre`      | intertitre de section (rien à saisir) | — (pas de colonne) |
 | `info`       | paragraphe d'information (rien à saisir) | — (pas de colonne) |
 
@@ -104,7 +107,8 @@ S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il a
 | `libelle`     | la question affichée |
 | `aide`        | petit texte d'aide sous la question |
 | `obligatoire` | `oui` = réponse exigée (pour `case` : la case doit être cochée) |
-| `options`     | réponses possibles pour `choix`, `liste`, `cases`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
+| `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
+| `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
 | `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` |
@@ -114,7 +118,7 @@ S'il n'y a qu'un seul formulaire, `index.php` l'affiche directement ; sinon il a
 ### Champs conditionnels (`si`)
 
 Un champ (ou un titre, ou un paragraphe d'info) peut n'apparaître qu'en fonction d'une réponse
-à un champ `choix`, `liste`, `cases` ou `case` **décrit avant lui** :
+à un champ `choix`, `liste`, `cases`, `echelle` ou `case` **décrit avant lui** :
 
 | écriture | sens |
 |----------|------|
@@ -159,7 +163,24 @@ options = "Aucun | Végétarien | Sans gluten"
 si      = "repas = Oui"
 ```
 
-`prive/formulaires/exemple.ini` montre tous les types et options.
+`prive/formulaires/exemple.ini` montre la plupart des types et options (dont deux listes déroulantes).
+
+### Exemple de sondage
+
+`prive/formulaires/sondage.ini` est un questionnaire de satisfaction anonyme (adresse `index.php?f=sondage`) :
+notes sur une échelle (`echelle`, de 1 à 5 ou de 0 à 10), liste déroulante « Comment avez-vous connu la journée ? »
+avec un champ « Précisez » qui n'apparaît que pour « Autre », choix multiples et commentaires libres.
+Aucun nom ni e-mail n'y est demandé, et `afficher_numero = non` évite d'afficher un numéro de réponse.
+Les notes arrivent dans le CSV sous forme de nombres : moyennes et graphiques se font directement dans le tableur.
+
+```ini
+[satisfaction]
+type        = echelle
+libelle     = "Globalement, êtes-vous satisfait(e) de la journée ?"
+gauche      = "Pas du tout"
+droite      = "Tout à fait"
+obligatoire = oui
+```
 
 Si le fichier contient une erreur (type inconnu, condition vers un champ inexistant, guillemet oublié…),
 la page affiche « Formulaire introuvable ou mal décrit » ; le détail de l'erreur est indiqué sur `admin.php`
@@ -170,15 +191,21 @@ Après modification d'un fichier sur le serveur, attendez quelques secondes avan
 
 ## 4. Récupérer les inscriptions
 
-**Par la page d'administration** — `https://votre-site.fr/inscription/admin.php` :
+**Par la page d'administration** (si elle est active : `'admin_actif' => true`, réglage par défaut) — `https://votre-site.fr/inscription/admin.php` :
 nombre d'inscrits, état (ouvert, clos, complet), bouton **Télécharger** (fichier `.csv`) et **Voir** (tableau à l'écran).
 
 **Par FTP** — dans `prive/donnees/` : un fichier `<fichier>.csv` par formulaire.
+Si vous ne voulez récupérer les données que par FTP, désactivez la page d'administration dans `prive/config.php` :
+```php
+'admin_actif' => false,
+```
+`admin.php` répond alors « Page introuvable » (vous pouvez aussi supprimer le fichier `admin.php` du serveur).
+Sans page d'administration, le test automatique de protection n'est plus affiché : faites la vérification à la main (§ 5 a).
 
 Format des fichiers :
 
 - encodage UTF-8 avec BOM, séparateur `;` (modifiable dans `config.php`) : un double-clic l'ouvre correctement dans
-  Excel (version française) ou LibreOffice ; dans LibreOffice, choisissez « UTF-8 » et « point-virgule » si la question est posée ;
+  Excel (version française), LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) (tableur libre et gratuit) ; dans LibreOffice, choisissez « UTF-8 » et « point-virgule » si la question est posée ;
 - colonnes : `numero` (numéro d'inscription aléatoire, ex. `K7QF-M2ZD`, aussi montré à l'inscrit), `date` (date et heure d'envoi),
   puis un champ par colonne, dans l'ordre du descripteur ;
 - les réponses commençant par `=`, `+`, `-` ou `@` sont précédées d'une apostrophe, pour qu'Excel ne les exécute pas comme formules.
@@ -209,8 +236,10 @@ Dans FileZilla : menu *Serveur* → *Forcer l'affichage des fichiers cachés*, e
 - rouge « Attention : le dossier des données est lisible depuis le web » : votre hébergeur ignore `.htaccess`
   (serveur nginx, par exemple) → passez au b).
 
-Vous pouvez aussi tester à la main : `https://votre-site.fr/inscription/prive/config.php` doit afficher une page
-d'erreur « 403 Forbidden » (et non une page blanche).
+Vous pouvez aussi tester à la main : `https://votre-site.fr/inscription/prive/formulaires/simple.ini` doit afficher
+une page d'erreur « 403 Forbidden » (ou « Accès interdit »). Si le contenu du fichier s'affiche, la protection ne fonctionne pas.
+(Test fait sous Apache 2.4 : avec `.htaccess` pris en compte, tous les fichiers de `prive/` répondent 403 ;
+sans, les CSV sont téléchargeables par n'importe qui et `admin.php` affiche l'alerte rouge.)
 
 ### b) Le plus sûr : sortir `prive/` de la partie publique
 
@@ -256,6 +285,7 @@ avec une directive `<Files admin.php>` dans un `.htaccess` à côté.
 
 | clé | rôle |
 |-----|------|
+| `admin_actif` | `true` (défaut) : page `admin.php` active ; `false` : désactivée, récupération par FTP uniquement |
 | `admin_mot_de_passe` | mot de passe chiffré de `admin.php` (généré par `admin.php` lui-même) |
 | `dossier_formulaires`, `dossier_donnees` | emplacement des descripteurs et des données (par défaut dans la zone privée) |
 | `separateur` | `;` (Excel français) ou `,` |

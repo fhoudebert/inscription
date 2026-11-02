@@ -4,6 +4,10 @@
  * INS_PRIVE = ce dossier « prive » (défini par emplacement.php).
  */
 return [
+    // true : la page admin.php est active (consultation et téléchargement des inscriptions)
+    // false : admin.php est désactivée ; les données se récupèrent uniquement par FTP (dossier donnees/)
+    'admin_actif'         => true,
+
     // Mot de passe de la page admin.php, sous forme chiffrée (hachée).
     // Laissez vide, ouvrez admin.php : la page vous donne la ligne à coller ici.
     'admin_mot_de_passe'  => '',

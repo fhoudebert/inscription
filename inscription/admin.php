@@ -16,6 +16,14 @@ $duree = 4 * 3600;
 $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
 $hash = (string)$cfg['admin_mot_de_passe'];
 
+/* ---------- Administration désactivée (récupération par FTP uniquement) ---------- */
+if (!$cfg['admin_actif']) {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Page introuvable.\n";
+    exit;
+}
+
 function ins_admin_connecte(string $cookie): bool
 {
     $v = $_COOKIE[$cookie] ?? '';
@@ -212,5 +220,5 @@ if ($autres) {
     }
     echo '</ul>';
 }
-echo '<p class="petit">Fichiers CSV en UTF-8, séparateur « ' . e($cfg['separateur']) . ' » : ils s\'ouvrent directement dans Excel ou LibreOffice Calc.</p>';
+echo '<p class="petit">Fichiers CSV en UTF-8, séparateur « ' . e($cfg['separateur']) . ' » : ils s\'ouvrent directement dans Excel, LibreOffice Calc ou GridCraft.</p>';
 ins_pied();
