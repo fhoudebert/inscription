@@ -95,7 +95,7 @@ return [
     'adm_jeton'           => 'Action refusée (page trop ancienne) : rechargez la page et recommencez.',
     'adm_gestion_off'     => "L'ajout et la suppression de formulaires sont désactivés (« admin_gestion » dans config.php).",
     'adm_test_encours'    => 'Vérification de la protection du dossier des données…',
-    'adm_test_expose'     => 'Attention : le dossier des données est lisible depuis le web ! Votre hébergeur ignore le fichier .htaccess. Déplacez le dossier « prive » hors de la partie publique (voir le README).',
+    'adm_test_expose'     => 'Attention : le dossier des données est lisible depuis le web ! Votre hébergeur ignore le fichier .htaccess. Déplacez le dossier « prive » hors de la partie publique (voir docs/administration.md, « Zone privée »).',
     'adm_test_protege'    => "Dossier des données protégé : il n'est pas accessible depuis le web.",
     'adm_test_hors_site'  => 'Le dossier des données est hors de la partie publique du site.',
     'adm_formulaires'     => 'Formulaires',
