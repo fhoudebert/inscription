@@ -5,7 +5,7 @@
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
 [Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
-[Accès restreint](#accès-restreint) ·
+[Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
 
@@ -15,7 +15,9 @@ Un formulaire = un fichier `prive/formulaires/<nom>.ini`, en texte brut **encod�
 (Bloc-notes, Notepad++, gedit, Kate…). Son adresse est `index.php?f=<nom>`.
 Le `<nom>` ne contient que des lettres non accentuées, des chiffres, `-` et `_`.
 
-Le fichier se dépose par FTP, ou depuis `admin.php` (voir [Gérer les formulaires](administration.md#gérer-les-formulaires)).
+Le fichier se dépose par FTP, s'envoie depuis `admin.php`, ou se crée et se modifie sans rien écrire dans
+l'**éditeur de formulaires** (voir [Éditeur de formulaires](administration.md#éditeur-de-formulaires)) :
+tout ce qui est décrit dans cette page s'y règle avec des cases, des listes et un aperçu en direct.
 Chaque formulaire a son propre fichier de réponses, `prive/donnees/<nom>.csv`.
 
 `index.php` affiche la liste des formulaires **diffusés** (`diffusion = oui`, le défaut) ; s'il n'y en a qu'un,
@@ -42,7 +44,7 @@ Réglages de la section `[formulaire]` :
 | `intro`     | texte d'introduction | — |
 | `merci`     | message affiché après l'envoi | « Merci, votre réponse est enregistrée. » |
 | `bouton`    | texte du bouton d'envoi | « Envoyer » |
-| `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) | le nom du formulaire |
+| `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) ; deux formulaires ne peuvent pas avoir le même (pensez-y en copiant un `.ini`) | le nom du formulaire |
 | `ouverture` | date/heure d'ouverture : `"2026-11-15"` ou `"2026-11-15 09:00"` | — |
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
@@ -53,6 +55,7 @@ Réglages de la section `[formulaire]` :
 | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
 | `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
 | `langues`   | formulaire multilingue : langues proposées, ex. `"fr \| en"` (voir [Formulaire multilingue](#formulaire-multilingue)) | — |
+| `message`   | formulaire de commande : modèle du message envoyé au client quand sa commande est prête (voir [Formulaire de commande](#formulaire-de-commande)) | texte par défaut |
 
 ## Types de champs
 
@@ -69,6 +72,7 @@ Réglages de la section `[formulaire]` :
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
 | `case`       | une case unique (accord, consentement RGPD…) | `oui` / `non` |
 | `echelle`    | note sur une ligne (1 à 5 par défaut, ou les valeurs de `options`), avec textes `gauche` / `droite` aux extrémités | la note choisie |
+| `commande`   | tableau des produits disponibles d'un `catalogue`, quantité par produit, total estimé (un seul par formulaire) | le détail lisible + une colonne `<nom>_total` |
 | `titre`      | intertitre de section (rien à saisir) | — (pas de colonne) |
 | `info`       | paragraphe d'information (rien à saisir) | — (pas de colonne) |
 
@@ -87,6 +91,7 @@ Réglages de la section `[formulaire]` :
 | `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels
 
@@ -166,6 +171,7 @@ obligatoire = oui
 | `colloque.ini` | formulaire bilingue français / anglais |
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
+| `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
 
 ## Diffusion et lien de partage
 
@@ -206,14 +212,72 @@ Fonctionnement :
 - **une seule réponse par accès**. Avec `modifiable = oui`, la personne qui revient avec son lien (et son mot de passe)
   retrouve sa réponse pré-remplie et peut la modifier jusqu'à la fermeture : la réponse est **remplacée**, pas ajoutée ;
   avec `modifiable = non`, elle voit « Vous avez déjà répondu » ;
-- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès) :
+- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès, à défaut son e-mail ou son téléphone) :
   on sait qui a répondu quoi ;
 - un formulaire à accès restreint n'apparaît **jamais** dans la liste publique, et sans lien valide l'adresse répond « Page introuvable » ;
 - `places` limite le nombre de personnes qui répondent ; une modification ne compte pas comme une nouvelle réponse ;
 - en mode `personnel`, la connexion dure 2 heures (lien « se déconnecter » sur la page) ; après 10 mots de passe faux,
-  l'accès est bloqué 15 minutes.
+  l'accès est bloqué 15 minutes ;
+- **champs déjà connus** : si l'accès a été créé avec un nom, un e-mail ou un téléphone (« Marie Durand ; marie@exemple.fr »),
+  ces informations pré-remplissent le champ `nom` (à défaut le premier texte court), le premier champ `email` et le premier
+  champ `telephone` du formulaire. Pour cette personne, ces champs ne sont **plus obligatoires** : laissés vides, ils
+  prennent la valeur connue ; elle peut aussi les corriger. Un champ affiché sous condition (`si`) n'est jamais pré-rempli.
 
 Exemple complet : `prive/formulaires/ag-membres.ini`.
+
+## Formulaire de commande
+
+Pour prendre des commandes (panier de légumes, pain, colis, repas…) : un champ de type `commande` affiche les produits
+**disponibles** d'un catalogue, avec leur prix et leur unité ; le client indique les quantités et voit le **total estimé**
+se calculer.
+
+```ini
+[formulaire]
+titre   = "Panier de la semaine"
+message = "Bonjour {nom},
+Votre commande n° {numero} est prête :
+{detail}
+Total à régler : {total}
+{note}"
+
+[nom]
+type        = texte
+libelle     = "Nom et prénom"
+obligatoire = oui
+
+[telephone]
+type        = telephone
+libelle     = "Téléphone"
+obligatoire = oui
+
+[panier]
+type        = commande
+libelle     = "Votre commande"
+catalogue   = legumes
+obligatoire = oui
+```
+
+- **Le catalogue** (`prive/catalogues/legumes.csv`) se gère dans `admin.php` : produits, unités, prix, pas de quantité,
+  case « disponible » à cocher chaque semaine ; import depuis un tableur possible. Voir [Catalogues et commandes](administration.md#catalogues-et-commandes).
+  Une même denrée peut figurer plusieurs fois avec des unités et des prix différents (carotte à la botte et au kilo, chou chinois, chou frisé…).
+- **Le pas** d'un produit (0,5 pour un demi-kilo, 0,1 pour 100 g) fixe la quantité minimale et ses multiples ; sans pas, la quantité est libre.
+- **Les prix sont toujours ceux du catalogue** au moment de la commande : un prix modifié dans le navigateur est ignoré.
+  Un produit devenu indisponible entre-temps est refusé avec un message clair.
+- **Le fichier de réponses** contient une colonne lisible (« Carotte (kg) : 1,5 × 1,00 € = 1,50 € », une ligne par produit)
+  et une colonne `<nom>_total` avec le total estimé en nombre. Le détail structuré (pour la préparation) est enregistré
+  à part, dans `prive/donnees/commandes/`.
+- **Le message** (`message`) est le texte proposé au vendeur pour prévenir le client, à copier dans un SMS ou un e-mail.
+  Repères : `{numero}`, `{date}`, `{detail}` (une ligne par produit), `{total}`, `{note}` (note saisie à la préparation)
+  et `{nom_du_champ}` pour toute réponse du formulaire (`{nom}`, `{telephone}`, `{retrait}`…). Sans `message`, un texte par défaut est utilisé.
+- **Accès réservé aux clients (facultatif)** : avec `acces = lien` (ou `personnel`), chaque client reçoit un lien personnel ;
+  ses nom, téléphone et e-mail, donnés à la création des accès, sont déjà remplis et ne sont plus obligatoires.
+  Avec `modifiable = oui` (défaut), il retrouve sa commande pré-remplie et peut la modifier ; si elle était déjà préparée,
+  la fiche de préparation le signale. Sans `acces`, le formulaire reste ouvert à tous. Dans l'éditeur : Réglages du formulaire
+  → **Diffusion et accès** → **Qui peut répondre**.
+- Un formulaire ne peut contenir qu'**un** champ `commande`. Le montant affiché est indicatif : le prix définitif
+  (pesée, produit manquant, remise) se fixe dans l'administration.
+
+Exemple complet : `prive/formulaires/panier.ini` et le catalogue fictif `prive/catalogues/legumes.csv`.
 
 ## Formulaire multilingue
 

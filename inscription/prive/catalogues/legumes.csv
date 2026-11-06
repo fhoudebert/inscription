@@ -1,0 +1,39 @@
+id;categorie;produit;unite;prix;pas;disponible
+ail-kg;Légumes;Ail;kg;12,00;0,25;oui
+artichaut-piece;Légumes;Artichaut;pièce;1,80;;non
+aubergine-kg;Légumes;Aubergine;kg;3,50;0,5;oui
+betterave-botte;Légumes;Betterave;botte;2,20;;oui
+betterave-kg;Légumes;Betterave;kg;2,50;0,5;oui
+blette-botte;Légumes;Blette;botte;2,00;;oui
+brocoli-piece;Légumes;Brocoli;pièce;2,50;;oui
+carotte-botte;Légumes;Carotte;botte;1,80;;oui
+carotte-kg;Légumes;Carotte;kg;1,00;0,5;oui
+celeri-rave-piece;Légumes;Céleri-rave;pièce;2,00;;oui
+chou-chinois-piece;Légumes;Chou chinois;pièce;2,30;;oui
+chou-frise-piece;Légumes;Chou frisé;pièce;2,00;;oui
+chou-rouge-kg;Légumes;Chou rouge;kg;2,40;0,5;non
+concombre-piece;Légumes;Concombre;pièce;1,20;;oui
+courge-butternut-kg;Légumes;Courge butternut;kg;2,80;0,5;oui
+courgette-kg;Légumes;Courgette;kg;2,60;0,5;oui
+echalote-kg;Légumes;Échalote;kg;6,00;0,25;oui
+epinard-kg;Légumes;Épinard;kg;6,50;0,25;oui
+fenouil-kg;Légumes;Fenouil;kg;3,90;0,5;non
+haricot-vert-kg;Légumes;Haricot vert;kg;7,50;0,25;oui
+laitue-piece;Légumes;Laitue;pièce;1,30;;oui
+mache-kg;Légumes;Mâche;kg;17,00;0,1;oui
+navet-botte;Légumes;Navet;botte;2,00;;oui
+oignon-kg;Légumes;Oignon;kg;2,20;0,5;oui
+panais-kg;Légumes;Panais;kg;3,80;0,5;oui
+poireau-kg;Légumes;Poireau;kg;3,20;0,5;oui
+pomme-de-terre-kg;Légumes;Pomme de terre;kg;1,90;1;oui
+radis-botte;Légumes;Radis;botte;1,50;;oui
+tomate-cerise-barquette;Légumes;Tomate cerise;barquette 250 g;3,00;;non
+tomate-ancienne-kg;Légumes;Tomate ancienne;kg;6,90;0,5;non
+fraise-barquette;Fruits;Fraise;barquette 500 g;4,50;;non
+melon-piece;Fruits;Melon;pièce;3,50;;non
+pomme-kg;Fruits;Pomme;kg;3,20;0,5;oui
+rhubarbe-kg;Fruits;Rhubarbe;kg;4,00;0,5;oui
+basilic-botte;Aromatiques;Basilic;botte;1,50;;oui
+ciboulette-botte;Aromatiques;Ciboulette;botte;1,20;;oui
+persil-botte;Aromatiques;Persil;botte;1,20;;oui
+oeuf-boite6;Œufs;Œufs;boîte de 6;3,20;;oui

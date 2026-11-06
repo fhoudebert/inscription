@@ -1,0 +1,70 @@
+/* Éditeur de formulaires (admin.php?a=editeur) */
+.edi-barre{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;margin:.2rem 0 .6rem}
+.edi-barre .edi-espace{flex:1}
+.edi-nom{display:flex;align-items:center;gap:.4rem}
+.edi-nom input{width:16rem}
+.edi-statut{font-size:.9rem;color:#57606a}
+.edi-statut.ok{color:#2e7d32}
+.edi-statut.alerte{color:var(--err)}
+.edi-avert{color:var(--err);font-size:.9rem}
+.edi-avert:empty{display:none}
+.edi-grille{display:grid;grid-template-columns:minmax(14rem,1fr) minmax(18rem,1.3fr) minmax(20rem,1.6fr);gap:.8rem;align-items:start}
+.edi-col{background:#fff;border:1px solid var(--bord);border-radius:8px;padding:.7rem;min-width:0}
+.edi-col-liste,.edi-col-props{max-height:calc(100vh - 7rem);overflow:auto;position:sticky;top:.5rem}
+.edi-col-apercu{position:sticky;top:.5rem}
+.edi-texte{display:none;width:100%;min-height:calc(100vh - 9rem);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;tab-size:4}
+.edi-grille.mode-texte{grid-template-columns:minmax(24rem,1.4fr) minmax(20rem,1.6fr)}
+.edi-grille.mode-texte .edi-col-liste{display:none}
+.edi-grille.mode-texte .edi-props{display:none}
+.edi-grille.mode-texte .edi-texte{display:block}
+.edi-grille.mode-texte .edi-col-props{max-height:none;position:static}
+.edi-item{border:1px solid var(--bord);border-radius:6px;padding:.35rem .5rem;margin:.25rem 0;cursor:pointer;background:#fff}
+.edi-item:hover{border-color:#9fb3c8}
+.edi-item.actif{border-color:var(--c);background:#eef4fa}
+.edi-item.deco{background:#f8f9fb}
+.edi-item.erreur{border-color:var(--err)}
+.edi-item-titre{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.edi-item-meta{display:block;font-size:.8rem;color:#57606a}
+.edi-item-actions{display:flex;gap:.25rem;margin-top:.3rem}
+button.mini{padding:.1rem .5rem;font-size:.85rem;margin:0}
+button[disabled]{opacity:.4;cursor:default}
+.edi-ajout{display:flex;gap:.4rem;margin-top:.6rem}
+.edi-ajout select{flex:1}
+.edi-props h2{margin-top:.2rem}
+.edi-groupe{font-size:1rem;margin:1rem 0 .3rem;color:var(--c)}
+.edi-prop{margin:.45rem 0}
+.edi-prop>label{display:block;font-weight:600;font-size:.92rem;margin-bottom:.15rem}
+.edi-aide{font-size:.82rem;color:#57606a;margin-top:.15rem}
+.edi-case{margin:.3rem 0}
+.edi-deux{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.edi-langues{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem;font-size:.9rem;padding-bottom:.4rem;border-bottom:1px solid var(--bord);margin-bottom:.4rem}
+.edi-langues button{padding:.15rem .6rem;font-size:.85rem;margin:0}
+.edi-conditions{border-top:1px solid var(--bord);margin-top:.8rem}
+.edi-cond{background:#f8f9fb;border-radius:6px;padding:.4rem;margin:.4rem 0}
+.edi-cond-ligne{display:flex;gap:.3rem;align-items:center}
+.edi-cond-ligne select{flex:1;min-width:0}
+.edi-et{font-size:.8rem;font-weight:600;color:var(--c)}
+.edi-cond-valeurs{display:flex;flex-wrap:wrap;gap:0 .8rem;margin-top:.2rem}
+.edi-avance{margin-top:1rem}
+.invalide{border-color:var(--err)!important;outline:1px solid var(--err)}
+.edi-apercu-tete{display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem}
+.edi-apercu-tete select{width:auto;margin-left:auto;padding:.2rem}
+.edi-etat{font-size:.88rem;padding:.3rem .5rem;border-radius:6px;background:#f1f3f5;margin-bottom:.3rem;white-space:pre-wrap}
+.edi-etat.ok{background:#e8f5e9;color:#2e7d32}
+.edi-etat.alerte{margin:0 0 .3rem}
+.edi-avert-colonnes{font-size:.85rem;background:#fff3cd;border-radius:6px;padding:.3rem .5rem;margin-bottom:.3rem}
+.edi-iframe{width:100%;height:calc(100vh - 12rem);min-height:24rem;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+@media (max-width:70rem){
+  .edi-grille,.edi-grille.mode-texte{grid-template-columns:1fr}
+  .edi-col-liste,.edi-col-props,.edi-col-apercu{position:static;max-height:none}
+  .edi-iframe{height:36rem}
+}
+.edi-item{position:relative;padding-left:1.4rem}
+.edi-poignee{position:absolute;left:.35rem;top:.4rem;color:#9aa5b1;cursor:grab;font-size:.9rem;line-height:1}
+.edi-item:first-child{padding-left:.5rem}
+.edi-item.glisse{opacity:.45}
+.edi-item.cible-avant{box-shadow:0 -3px 0 0 var(--c)}
+.edi-item.cible-apres{box-shadow:0 3px 0 0 var(--c)}
+.edi-item:focus-visible{outline:2px solid var(--c);outline-offset:1px}
+.edi-raccourcis{margin-top:.6rem}
+.edi-sommaire{font-size:.88rem;margin:.2rem 0 .6rem}
