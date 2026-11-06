@@ -251,6 +251,8 @@ return [
     'edi_merci'           => 'Message after submitting',
     'edi_bouton'          => 'Submit button text',
     'edi_par_defaut'      => 'default text',
+    'edi_textes'          => 'Texts',
+    'edi_acces_aide'      => 'Accesses (one personal link per person) are created in admin.php, "Manage access" section of this form, after saving.',
     'edi_periode'         => 'Period and places',
     'edi_ouverture'       => 'Opens',
     'edi_fermeture'       => 'Closes',

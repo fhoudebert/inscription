@@ -72,8 +72,9 @@ La page a trois colonnes :
 - **au milieu, les propriétés** du champ sélectionné, selon son type : question, nom de colonne, réponses possibles
   (une par ligne), texte d'aide, exemple, obligatoire, valeur unique, bornes, valeur pré-remplie, et l'assistant
   **Afficher si…** (choisir un champ placé avant, « est parmi » / « n'est pas parmi », cocher les réponses ;
-  plusieurs conditions = toutes à la fois). Pour les réglages du formulaire : titre, textes, période, places,
-  qui peut répondre (tout le monde, accès personnel), diffusion, langues, courriel de notification ;
+  plusieurs conditions = toutes à la fois). Pour les réglages du formulaire (sommaire en tête du panneau) : titre,
+  **Diffusion et accès** (qui peut répondre : tout le monde ou accès personnel ; diffusion ; courriel de notification),
+  textes, période et places, langues ;
 - **à droite, l'aperçu**, rafraîchi pendant la frappe et produit par le même code que la page publique : ce qu'on y voit
   est ce que verront les répondants (conditions comprises : on peut cocher les réponses pour les essayer).
   Un clic sur un champ de l'aperçu le sélectionne. Au-dessus : « Formulaire valide » ou l'erreur à corriger.

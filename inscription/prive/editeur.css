@@ -67,3 +67,4 @@ button[disabled]{opacity:.4;cursor:default}
 .edi-item.cible-apres{box-shadow:0 3px 0 0 var(--c)}
 .edi-item:focus-visible{outline:2px solid var(--c);outline-offset:1px}
 .edi-raccourcis{margin-top:.6rem}
+.edi-sommaire{font-size:.88rem;margin:.2rem 0 .6rem}

@@ -251,6 +251,8 @@ return [
     'edi_merci'           => "Message après l'envoi",
     'edi_bouton'          => "Texte du bouton d'envoi",
     'edi_par_defaut'      => 'texte par défaut',
+    'edi_textes'          => 'Textes',
+    'edi_acces_aide'      => 'Les accès (un lien personnel par personne) se créent dans admin.php, rubrique « Gérer les accès » de ce formulaire, après l’enregistrement.',
     'edi_periode'         => 'Période et places',
     'edi_ouverture'       => 'Ouverture',
     'edi_fermeture'       => 'Fermeture',

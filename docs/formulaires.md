@@ -272,8 +272,8 @@ obligatoire = oui
 - **Accès réservé aux clients (facultatif)** : avec `acces = lien` (ou `personnel`), chaque client reçoit un lien personnel ;
   ses nom, téléphone et e-mail, donnés à la création des accès, sont déjà remplis et ne sont plus obligatoires.
   Avec `modifiable = oui` (défaut), il retrouve sa commande pré-remplie et peut la modifier ; si elle était déjà préparée,
-  la fiche de préparation le signale. Sans `acces`, le formulaire reste ouvert à tous (`panier.ini` contient la ligne
-  `; acces = lien` à décommenter).
+  la fiche de préparation le signale. Sans `acces`, le formulaire reste ouvert à tous. Dans l'éditeur : Réglages du formulaire
+  → **Diffusion et accès** → **Qui peut répondre**.
 - Un formulaire ne peut contenir qu'**un** champ `commande`. Le montant affiché est indicatif : le prix définitif
   (pesée, produit manquant, remise) se fixe dans l'administration.
 

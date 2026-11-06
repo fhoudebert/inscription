@@ -20,7 +20,7 @@ return [
 
     // Mot de passe de la page admin.php, sous forme chiffrée (hachée).
     // Laissez vide, ouvrez admin.php : la page vous donne la ligne à coller ici.
-    'admin_mot_de_passe'  => '$2y$12$xD3Zi45uk2uL8PvNwpEPjeRUJwDWvdM002wZpvXnfpRRdGF8iOyJq',
+    'admin_mot_de_passe'  => '',
 
     // Où se trouvent les descripteurs de formulaires (*.ini) et les fichiers de données (*.csv)
     'dossier_formulaires' => INS_PRIVE . '/formulaires',

@@ -418,32 +418,59 @@
 
   function dessinerReglages() {
     var g = S.modele.formulaire;
+    var cmd = S.modele.champs.some(function (c) { return c.type === 'commande'; });
     props.appendChild(el('h2', { texte: T('edi_reglages') }));
-    props.appendChild(traduisible(g, 'titre', { libelle: T('edi_titre_form') }));
-    props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
-    props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
-    props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
-    if (S.modele.champs.some(function (c) { return c.type === 'commande'; })) {
-      props.appendChild(traduisible(g, 'message', { libelle: T('edi_message_commande'), long: true, rows: 6, placeholder: T('edi_par_defaut'),
-        aide: T('edi_message_commande_aide', { champs: S.modele.champs.filter(function (c) { return DECORATIFS.indexOf(c.type) < 0 && c.type !== 'commande'; })
-          .map(function (c) { return '{' + c.nom + '}'; }).join(' ') }) }));
+    function textes() {
+      props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
+      props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
+      props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
+      if (cmd) {
+        props.appendChild(traduisible(g, 'message', { libelle: T('edi_message_commande'), long: true, rows: 6, placeholder: T('edi_par_defaut'),
+          aide: T('edi_message_commande_aide', { champs: S.modele.champs.filter(function (c) { return DECORATIFS.indexOf(c.type) < 0 && c.type !== 'commande'; })
+            .map(function (c) { return '{' + c.nom + '}'; }).join(' ') }) }));
+      }
     }
-    if (S.langueEd) return;
+    if (S.langueEd) {
+      props.appendChild(traduisible(g, 'titre', { libelle: T('edi_titre_form') }));
+      textes();
+      return;
+    }
+    // Sommaire : accès direct à chaque groupe de réglages (le panneau défile)
+    var groupes = [['acces', T('edi_acces_groupe')], ['textes', T('edi_textes')], ['periode', T('edi_periode')], ['langues', T('edi_langues')]];
+    props.appendChild(el('p', { classe: 'edi-sommaire' }, groupes.map(function (x, n) {
+      return [n ? ' · ' : '', el('a', { href: '#', texte: x[1], onclick: function (ev) {
+        ev.preventDefault();
+        var cible = props.querySelector('[data-groupe="' + x[0] + '"]');
+        if (cible) cible.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      } })];
+    }).reduce(function (a, b) { return a.concat(b); }, [])));
+    function titreGroupe(cle, texteGroupe) {
+      var h = groupe(texteGroupe);
+      h.setAttribute('data-groupe', cle);
+      props.appendChild(h);
+    }
+    props.appendChild(traduisible(g, 'titre', { libelle: T('edi_titre_form') }));
 
-    props.appendChild(groupe(T('edi_periode')));
+    titreGroupe('acces', T('edi_acces_groupe'));
+    props.appendChild(choixListe(g, 'acces', [['', T('edi_acces_libre')], ['personnel', T('edi_acces_personnel')], ['lien', T('edi_acces_lien')]],
+      T('edi_acces'), dessinerProps));
+    if (!g.acces) props.appendChild(caseCocher(g, 'diffusion', T('edi_diffusion')));
+    else {
+      props.appendChild(caseCocher(g, 'modifiable', T('edi_modifiable')));
+      props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_acces_aide') }));
+    }
+    props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
+    props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
+
+    titreGroupe('textes', T('edi_textes'));
+    textes();
+
+    titreGroupe('periode', T('edi_periode'));
     props.appendChild(texte(g, 'ouverture', { libelle: T('edi_ouverture'), placeholder: 'AAAA-MM-JJ HH:MM', aide: T('edi_date_aide') }));
     props.appendChild(texte(g, 'fermeture', { libelle: T('edi_fermeture'), placeholder: 'AAAA-MM-JJ', aide: T('edi_fermeture_aide') }));
     props.appendChild(texte(g, 'places', { libelle: T('edi_places'), type: 'number', min: '0', aide: T('edi_places_aide') }));
 
-    props.appendChild(groupe(T('edi_acces_groupe')));
-    props.appendChild(choixListe(g, 'acces', [['', T('edi_acces_libre')], ['personnel', T('edi_acces_personnel')], ['lien', T('edi_acces_lien')]],
-      T('edi_acces'), dessinerProps));
-    if (!g.acces) props.appendChild(caseCocher(g, 'diffusion', T('edi_diffusion')));
-    else props.appendChild(caseCocher(g, 'modifiable', T('edi_modifiable')));
-    props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
-    props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
-
-    props.appendChild(groupe(T('edi_langues')));
+    titreGroupe('langues', T('edi_langues'));
     props.appendChild(choixListe(g, 'langue', D.langues.map(function (l) { return [l.code, l.nom]; }), T('edi_langue_base'), function () {
       g.langues = [g.langue].concat((g.langues || []).filter(function (l) { return l !== g.langue; }));
       dessinerProps(); dessinerChoixApercu();
