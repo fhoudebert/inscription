@@ -101,7 +101,7 @@ Réglages de la section `[formulaire]` :
 ## Champs conditionnels
 
 Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fonction d'une réponse
-à un champ `choix`, `liste`, `cases`, `echelle` ou `case` **décrit avant lui** :
+à un champ `choix`, `liste`, `cases`, `echelle`, `case`, `nombre` ou `date` **décrit avant lui** :
 
 | écriture | sens |
 |----------|------|
@@ -110,6 +110,13 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 | `si = "profil != Bénévole"` | affiché si « Bénévole » n'est **pas** choisi |
 | `si = "profil = Association & stand = Oui"` | `&` = les deux conditions à la fois |
 | `si = "covoiturage = oui"` | pour un champ de type `case` (cochée = `oui`, non cochée = `non`) |
+| `si = "groupe > 4"` | nombre : `<`, `<=`, `>`, `>=`, et aussi `=` / `!=` (virgule ou point : `2,5`) |
+| `si = "arrivee < 2026-12-12"` | date, au format `AAAA-MM-JJ` |
+| `si = "satisfaction <= 2"` | échelle de notes, si toutes ses notes sont des nombres |
+| `si = "hebergement = Oui & groupe > 4"` | les deux à la fois : choix **et** comparaison |
+
+Une comparaison (`<`, `<=`, `>`, `>=`) ne porte que sur un **seul** nombre ou une seule date. **Tant que le nombre (ou la date)
+n'est pas saisi, la condition est fausse** : le champ reste masqué, même avec `!=`. À l'écran, l'affichage change pendant la frappe.
 
 Un champ masqué n'est jamais obligatoire et n'est pas enregistré (colonne vide), même si une valeur
 est envoyée de force. Sans JavaScript, tous les champs s'affichent mais les mêmes règles s'appliquent à l'enregistrement.
@@ -404,6 +411,16 @@ Si le fichier contient une erreur (type inconnu, condition vers un champ inexist
 la page affiche « Formulaire introuvable ou mal décrit » ; le détail de l'erreur est indiqué sur `admin.php`
 (ou sur la page elle-même avec `'debug' => true` dans `config.php`). Un fichier envoyé par `admin.php` est vérifié
 avant d'être installé : en cas d'erreur, il est refusé et rien ne change.
+
+Les erreurs d'écriture les plus courantes sont signalées avec leur numéro de ligne :
+
+| message | correction |
+|---------|------------|
+| « ligne 12 : « [c_8_detail » — il manque le crochet fermant ] » | écrire `[c_8_detail]` |
+| « il manque le crochet ouvrant [ » | une ligne `nom]` : écrire `[nom]` |
+| « le texte entre guillemets qui commence ici n'est jamais refermé » | ajouter le `"` final du texte commencé à cette ligne |
+| « teste « (Samedi matin », qui n'est pas une option » | dans `si`, pas de parenthèses ; valeurs écrites exactement comme dans `options` |
+| « « > » ne s'applique qu'à un nombre, une date ou une échelle » | comparaison sur un champ texte ou choix : utiliser `=` / `!=` |
 
 Après modification d'un fichier par FTP, attendez quelques secondes avant de recharger la page
 (certains hébergeurs gardent les fichiers PHP en cache un court instant).

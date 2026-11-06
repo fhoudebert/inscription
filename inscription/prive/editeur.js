@@ -61,7 +61,8 @@
   }
   var DECORATIFS = ['titre', 'info'];
   var A_OPTIONS = ['choix', 'liste', 'cases', 'echelle'];
-  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case'];
+  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'date'];
+  var COMPARAISONS = ['<', '<=', '>', '>='];
 
   /* ---------- État ---------- */
   var S = {
@@ -645,12 +646,33 @@
           return el('option', { value: x.nom, texte: x.libelle || x.nom });
         })));
       sCible.value = k.champ;
-      sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
-      var sOp = el('select', { 'aria-label': T('edi_cond_op') }, el('option', { value: '1', texte: T('edi_cond_est') }), el('option', { value: '0', texte: T('edi_cond_nest_pas') }));
-      sOp.value = k.egal ? '1' : '0';
-      sOp.addEventListener('change', function () { k.egal = sOp.value === '1'; marquerModifie(); planifierApercu(0); });
+      sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; k.op = '='; k.egal = true; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
+      // Opérateurs : « est parmi / n'est pas parmi » pour les choix ; =, ≠, <, ≤, >, ≥ pour les nombres et les dates
+      var typeC = cible ? cible.type : '';
+      var numerique = typeC === 'nombre' || typeC === 'date';
+      var opsComp = [['<', T('edi_cond_inf')], ['<=', T('edi_cond_inf_egal')], ['>', T('edi_cond_sup')], ['>=', T('edi_cond_sup_egal')]];
+      var ops = numerique ? [['=', T('edi_cond_egal')], ['!=', T('edi_cond_different')]].concat(opsComp)
+        : [['est', T('edi_cond_est')], ['nest', T('edi_cond_nest_pas')]].concat(typeC === 'echelle' ? opsComp : []);
+      var sOp = el('select', { 'aria-label': T('edi_cond_op') }, ops.map(function (o) { return el('option', { value: o[0], texte: o[1] }); }));
+      var comparaison = COMPARAISONS.indexOf(k.op) >= 0;
+      sOp.value = comparaison ? k.op : numerique ? (k.egal ? '=' : '!=') : (k.egal ? 'est' : 'nest');
+      sOp.addEventListener('change', function () {
+        var v = sOp.value, avant = COMPARAISONS.indexOf(k.op) >= 0 || numerique;
+        k.op = v === 'est' ? '=' : v === 'nest' ? '!=' : v;
+        k.egal = k.op !== '!=';
+        if (avant !== (COMPARAISONS.indexOf(k.op) >= 0 || numerique)) k.valeurs = []; // liste de choix ⇄ valeur saisie
+        marquerModifie(); dessinerProps(); planifierApercu(0);
+      });
       var vals = el('div', { classe: 'edi-cond-valeurs' });
-      var choix = !cible ? [] : cible.type === 'case' ? [['1', T('edi_coche')], ['0', T('edi_non_coche')]] : (cible.options || []).map(function (o) { return [o, o]; });
+      if (cible && (numerique || comparaison)) {
+        var zVal = el('input', { type: typeC === 'date' ? 'date' : 'text', inputmode: typeC === 'date' ? null : 'decimal',
+          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' ? '' : '4' });
+        zVal.style.width = '10rem';
+        zVal.addEventListener('input', function () { var v = zVal.value.trim(); k.valeurs = v ? [v] : []; marquerModifie(); planifierApercu(); });
+        vals.appendChild(zVal);
+        vals.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_cond_vide') }));
+      }
+      var choix = !cible || numerique || comparaison ? [] : cible.type === 'case' ? [['1', T('edi_coche')], ['0', T('edi_non_coche')]] : (cible.options || []).map(function (o) { return [o, o]; });
       choix.forEach(function (o) {
         var cc = el('input', { type: 'checkbox' });
         cc.checked = k.valeurs.indexOf(o[0]) >= 0;
@@ -669,7 +691,7 @@
     if (cibles.length) {
       bloc.appendChild(el('button', { type: 'button', classe: 'sec', texte: '+ ' + T('edi_cond_ajouter'), onclick: function () {
         c.si = c.si || [];
-        c.si.push({ champ: cibles[cibles.length - 1].nom, egal: true, valeurs: [] });
+        c.si.push({ champ: cibles[cibles.length - 1].nom, op: '=', egal: true, valeurs: [] });
         marquerModifie(); dessinerProps(); dessinerListe();
       } }));
     } else {

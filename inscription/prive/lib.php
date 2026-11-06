@@ -378,7 +378,16 @@ function ins_analyser_formulaire(string $id, string $contenu): array
     $ini = @parse_ini_string($contenu, true, INI_SCANNER_NORMAL);
     if ($ini === false) {
         $err = error_get_last();
-        throw new RuntimeException(t('err_syntaxe', ['f' => $f, 'detail' => $err['message'] ?? '?']));
+        // Message précis (crochet ou guillemet manquant) quand on trouve la ligne fautive
+        $diag = ins_diagnostic_ini($contenu, $f);
+        if ($diag !== '') {
+            throw new RuntimeException($diag);
+        }
+        $detail = (string)($err['message'] ?? '?');
+        if (preg_match('/ on line (\d+)/', $detail, $m)) {
+            $detail = t('err_syntaxe_ligne', ['n' => $m[1]]) . ' ' . preg_replace('/ in Unknown on line \d+$/', '', $detail);
+        }
+        throw new RuntimeException(t('err_syntaxe', ['f' => $f, 'detail' => $detail]));
     }
 
     $g = $ini['formulaire'] ?? ($ini['form'] ?? []);
@@ -596,6 +605,55 @@ function ins_date_ini($v, string $f, string $cle): ?int
 }
 
 /**
+ * Cherche la ligne fautive d'un .ini illisible : section sans crochet fermant ou ouvrant,
+ * texte après « ] », ligne qui n'est ni [section] ni clé = valeur, guillemet jamais refermé.
+ * @return string message d'erreur, ou '' si rien de précis n'est trouvé
+ */
+function ins_diagnostic_ini(string $contenu, string $f): string
+{
+    $lignes = preg_split('/\R/', $contenu) ?: [];
+    $ouvert = 0; // ligne où un texte entre guillemets a commencé sans être refermé
+    foreach ($lignes as $i => $brute) {
+        $n = $i + 1;
+        $l = trim($brute);
+        $court = mb_strimwidth($l, 0, 60, '…');
+        if ($ouvert) {
+            if (ins_guillemets_impairs($l)) {
+                $ouvert = 0;
+            }
+            continue;
+        }
+        if ($l === '' || $l[0] === ';' || $l[0] === '#') {
+            continue;
+        }
+        if ($l[0] === '[') {
+            if (strpos($l, ']') === false) {
+                return t('err_ini_crochet_fermant', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+            }
+            if (!preg_match('/^\[[^\]\[]*\]\s*(;.*)?$/', $l)) {
+                return t('err_ini_section', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+            }
+            continue;
+        }
+        $egal = strpos($l, '=');
+        if ($egal === false) {
+            return t(preg_match('/^[^"]*\]\s*(;.*)?$/', $l) ? 'err_ini_crochet_ouvrant' : 'err_ini_ligne', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+        }
+        if (ins_guillemets_impairs(substr($l, $egal + 1))) {
+            $ouvert = $n;
+        }
+    }
+    return $ouvert ? t('err_ini_guillemet', ['f' => $f, 'n' => $ouvert]) : '';
+}
+
+/** Nombre impair de guillemets non échappés (\") dans un morceau de ligne ? */
+function ins_guillemets_impairs(string $s): bool
+{
+    $s = str_replace('\\\\', '', $s);
+    return preg_match_all('/(?<!\\\\)"/', $s) % 2 === 1;
+}
+
+/**
  * « si » : conditions d'affichage, séparées par « & » (toutes doivent être vraies).
  *   profil = Bénévole | Média    → l'une de ces réponses est choisie
  *   profil != Bénévole           → aucune de ces réponses n'est choisie
@@ -609,7 +667,7 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         if ($morceau === '') {
             continue;
         }
-        if (!preg_match('/^([a-z][a-z0-9_]*)\s*(!=|=)\s*(.+)$/is', $morceau, $m)) {
+        if (!preg_match('/^([a-z][a-z0-9_]*)\s*(!=|<=|>=|=|<|>)\s*(.+)$/is', $morceau, $m)) {
             throw new RuntimeException(t('err_condition', ['f' => $f, 'nom' => $nom, 'cond' => $morceau]));
         }
         $cible = $m[1];
@@ -621,6 +679,29 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         if (in_array($c['type'], ['grille', 'commande'], true)) {
             throw new RuntimeException(t('err_condition_grille', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
         }
+        $op = $m[2];
+        $comparaison = !in_array($op, ['=', '!='], true);
+        // Comparaison de nombres ou de dates : champ nombre, date, ou échelle dont les notes sont des nombres
+        $num = in_array($c['type'], ['nombre', 'date'], true) || ($c['type'] === 'echelle' && $comparaison);
+        if ($comparaison && !$num) {
+            throw new RuntimeException(t('err_condition_comparaison', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'op' => $op]));
+        }
+        if ($num) {
+            if ($comparaison && count($valeurs) !== 1) {
+                throw new RuntimeException(t('err_condition_valeur', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'valeur' => trim($m[3])]));
+            }
+            if ($c['type'] === 'echelle' && array_filter($c['options'], function ($o) { return ins_valeur_comparable('nombre', $o) === null; })) {
+                throw new RuntimeException(t('err_condition_echelle', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
+            }
+            foreach ($valeurs as $v) {
+                if (ins_valeur_comparable($c['type'] === 'date' ? 'date' : 'nombre', $v) === null) {
+                    throw new RuntimeException(t($c['type'] === 'date' ? 'err_condition_date' : 'err_condition_valeur',
+                        ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'valeur' => $v]));
+                }
+            }
+            $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op !== '!=', 'valeurs' => $valeurs, 'num' => $c['type'] === 'date' ? 'date' : 'nombre'];
+            continue;
+        }
         if ($c['type'] === 'case') {
             $valeurs = array_map(function ($v) { return ins_oui($v) ? '1' : '0'; }, $valeurs);
         } elseif ($c['options']) {
@@ -631,9 +712,46 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
                 }
             }
         }
-        $res[] = ['champ' => $cible, 'egal' => $m[2] === '=', 'valeurs' => $valeurs];
+        $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op === '=', 'valeurs' => $valeurs, 'num' => ''];
     }
     return $res;
+}
+
+/** Valeur comparable d'une saisie : nombre (virgule ou point) ou date AAAA-MM-JJ ; null si illisible ou vide. */
+function ins_valeur_comparable(string $genre, string $v)
+{
+    $v = trim($v);
+    if ($genre === 'date') {
+        $d = DateTime::createFromFormat('!Y-m-d', $v);
+        return $d && $d->format('Y-m-d') === $v ? $v : null;
+    }
+    return preg_match('/^-?\d+([.,]\d+)?$/', $v) ? (float)str_replace(',', '.', $v) : null;
+}
+
+/** Condition « si » sur un nombre ou une date (=, !=, <, <=, >, >=). Saisie vide ou illisible : condition fausse. */
+function ins_comparer(array $cond, string $saisie): bool
+{
+    $x = ins_valeur_comparable($cond['num'], $saisie);
+    if ($x === null) {
+        return false;
+    }
+    $res = [];
+    foreach ($cond['valeurs'] as $v) {
+        $y = ins_valeur_comparable($cond['num'], (string)$v);
+        $res[] = $y === null ? null : ($x < $y ? -1 : ($x > $y ? 1 : 0));
+    }
+    $res = array_values(array_filter($res, function ($r) { return $r !== null; }));
+    if (!$res) {
+        return false;
+    }
+    switch ($cond['op']) {
+        case '=':  return in_array(0, $res, true);
+        case '!=': return !in_array(0, $res, true);
+        case '<':  return $res[0] < 0;
+        case '<=': return $res[0] <= 0;
+        case '>':  return $res[0] > 0;
+        default:   return $res[0] >= 0; // >=
+    }
 }
 
 /**
@@ -884,6 +1002,12 @@ function ins_visible(array $c, array $valeurs, array $visibles, array $champs, s
             return false; // dépend d'un champ lui-même masqué
         }
         $v = $valeurs[$cible] ?? '';
+        if (!empty($cond['num'])) {
+            if (!ins_comparer($cond, (string)$v)) {
+                return false;
+            }
+            continue;
+        }
         if ($champs[$cible]['type'] === 'case') {
             $choisis = [$v === ins_valeur_case(true, $langue) ? '1' : '0'];
         } else {
@@ -2381,12 +2505,34 @@ function ins_script_conditions(): string
     });
     return res.map(function (v) { return v.trim().toLowerCase(); });
   }
+  // Nombres (virgule ou point) et dates AAAA-MM-JJ ; saisie vide ou illisible : condition fausse
+  function lire(genre, v) {
+    v = String(v).trim();
+    if (genre === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    return /^-?\d+([.,]\d+)?$/.test(v) ? parseFloat(v.replace(',', '.')) : null;
+  }
+  function comparer(c, saisie) {
+    var x = lire(c.num, saisie);
+    if (x === null) return false;
+    var r = c.valeurs.map(function (y) { y = lire(c.num, y); return y === null ? null : (x < y ? -1 : x > y ? 1 : 0); })
+      .filter(function (d) { return d !== null; });
+    if (!r.length) return false;
+    switch (c.op) {
+      case '=': return r.indexOf(0) >= 0;
+      case '!=': return r.indexOf(0) < 0;
+      case '<': return r[0] < 0;
+      case '<=': return r[0] <= 0;
+      case '>': return r[0] > 0;
+      default: return r[0] >= 0;
+    }
+  }
   function maj() {
     blocs.forEach(function (bloc) {
       var conds = JSON.parse(bloc.getAttribute('data-si')), vis = true;
       conds.forEach(function (c) {
         var v = valeurs(c.champ);
         if (v === null) { vis = false; return; }
+        if (c.num) { if (!comparer(c, v[0] || '')) vis = false; return; }
         var trouve = c.valeurs.some(function (x) { return v.indexOf(x.toLowerCase()) >= 0; });
         if (trouve !== c.egal) vis = false;
       });
@@ -2395,6 +2541,7 @@ function ins_script_conditions(): string
     });
   }
   form.addEventListener('change', maj);
+  form.addEventListener('input', maj); // nombres et dates : pendant la frappe
   maj(); maj(); // deux passes pour les dépendances en chaîne
 })();
 </script>
@@ -2449,7 +2596,7 @@ function ins_modele(array $form): array
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
             'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'],
-            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
+            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'trad' => (object)$c['trad'],
         ];
     }
@@ -2654,6 +2801,11 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
             if (($types[$cible] ?? '') === 'case') {
                 $vals = array_map(function ($v) { return ins_oui($v) ? 'oui' : 'non'; }, $vals);
+            }
+            $op = ins_modele_texte($cond['op'] ?? '');
+            if (in_array($op, ['<', '<=', '>', '>='], true)) {
+                $conds[] = $cible . ' ' . $op . ' ' . $vals[0];
+                continue;
             }
             $conds[] = $cible . (empty($cond['egal']) ? ' != ' : ' = ') . implode(' | ', $vals);
         }
