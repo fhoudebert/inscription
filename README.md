@@ -3,13 +3,14 @@
 Recueillir des inscriptions ou des réponses à un sondage sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…),
 sans base de données ni programmation :
 
-- chaque formulaire est **décrit dans un fichier texte** (`.ini`) ;
+- chaque formulaire est **décrit dans un fichier texte** (`.ini`), qu'on peut écrire à la main ou créer et modifier
+  dans un **éditeur visuel** avec aperçu en direct ;
 - les réponses s'ajoutent à un **fichier CSV** qui s'ouvre dans Excel, LibreOffice Calc ou [GridCraft](https://getartcraft.com/apps/gridcraft) ;
 - un formulaire est **diffusé** (listé sur la page d'accueil), **non diffusé** (ouvert seulement par un lien de partage)
   ou à **accès restreint** : chaque personne invitée reçoit un lien personnel (et un mot de passe), répond une fois
   et peut modifier sa réponse — les robots et les inconnus ne peuvent rien envoyer ;
 - une **page d'administration** protégée par mot de passe permet de télécharger les réponses, copier les liens de partage,
-  créer les accès personnels, ajouter ou supprimer des formulaires ;
+  créer les accès personnels, créer, modifier ou supprimer des formulaires ;
 - l'interface est en **français et en anglais**, et un formulaire peut être **multilingue** (langue du navigateur, changement par un lien).
 
 Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune session PHP, aucune base MySQL.
@@ -19,7 +20,7 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
 | page | contenu |
 |------|---------|
 | **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, accès restreint, formulaires multilingues, exemples |
-| **[Administration](docs/administration.md)** | page `admin.php`, récupération des réponses, gestion des formulaires, accès personnels, zone privée, réglages, sécurité, dépannage, langues de l'interface |
+| **[Administration](docs/administration.md)** | page `admin.php`, éditeur de formulaires, récupération des réponses, gestion des formulaires, accès personnels, zone privée, réglages, sécurité, dépannage, langues de l'interface |
 
 ## Installation en bref
 
@@ -30,7 +31,8 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
 3. Ouvrez `admin.php`, choisissez un mot de passe et collez la ligne obtenue dans `prive/config.php`.
 4. Connectez-vous à `admin.php` : le **test automatique** doit indiquer en vert que les données ne sont pas lisibles depuis le web.
    Sinon, voir [Zone privée](docs/administration.md#zone-privée).
-5. Adaptez ou supprimez les exemples de `prive/formulaires/`, puis faites une réponse d'essai.
+5. Créez votre formulaire dans l'éditeur (`admin.php` → **Créer un formulaire**) ou adaptez un exemple
+   de `prive/formulaires/`, puis faites une réponse d'essai.
 
 Détails : [Administration → Installation](docs/administration.md#installation).
 
@@ -44,6 +46,7 @@ inscription/                 ← dossier à copier sur le site
 └── prive/                   ← ZONE PRIVÉE, interdite d'accès web (.htaccess)
     ├── config.php           ← réglages
     ├── lib.php              ← le moteur
+    ├── editeur.js, .css     ← l'éditeur de formulaires de admin.php
     ├── lang/                ← textes de l'interface (fr.php, en.php)
     ├── formulaires/         ← un fichier .ini par formulaire (+ exemples)
     └── donnees/             ← un fichier .csv de réponses par formulaire
@@ -68,7 +71,7 @@ libelle = "Restez-vous au repas ?"
 options = "Oui | Non"
 ```
 
-Déposé sous `prive/formulaires/reunion.ini` (par FTP ou depuis `admin.php`), il est en ligne à l'adresse
+Déposé sous `prive/formulaires/reunion.ini` (par FTP, par téléversement ou créé dans l'éditeur de `admin.php`), il est en ligne à l'adresse
 `index.php?f=reunion` ; les réponses arrivent dans `prive/donnees/reunion.csv`.
 
 Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),

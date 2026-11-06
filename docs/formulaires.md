@@ -15,7 +15,9 @@ Un formulaire = un fichier `prive/formulaires/<nom>.ini`, en texte brut **encod�
 (Bloc-notes, Notepad++, gedit, Kate…). Son adresse est `index.php?f=<nom>`.
 Le `<nom>` ne contient que des lettres non accentuées, des chiffres, `-` et `_`.
 
-Le fichier se dépose par FTP, ou depuis `admin.php` (voir [Gérer les formulaires](administration.md#gérer-les-formulaires)).
+Le fichier se dépose par FTP, s'envoie depuis `admin.php`, ou se crée et se modifie sans rien écrire dans
+l'**éditeur de formulaires** (voir [Éditeur de formulaires](administration.md#éditeur-de-formulaires)) :
+tout ce qui est décrit dans cette page s'y règle avec des cases, des listes et un aperçu en direct.
 Chaque formulaire a son propre fichier de réponses, `prive/donnees/<nom>.csv`.
 
 `index.php` affiche la liste des formulaires **diffusés** (`diffusion = oui`, le défaut) ; s'il n'y en a qu'un,

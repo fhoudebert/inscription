@@ -151,6 +151,174 @@ function ins_mettre_de_cote(string $dirForm, string $id, string $motif, bool $co
     }
 }
 
+/* ---------- Éditeur de formulaires ---------- */
+function ins_json(array $r): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($r, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    exit;
+}
+
+/** Texte .ini et formulaire analysé à partir de ce qu'envoie l'éditeur (modèle JSON ou texte brut). */
+function ins_editeur_analyser(string $id): array
+{
+    if (($_POST['source'] ?? '') === 'texte') {
+        $texte = str_replace("\r\n", "\n", (string)($_POST['ini'] ?? ''));
+    } else {
+        $m = json_decode((string)($_POST['modele'] ?? ''), true);
+        if (!is_array($m)) {
+            throw new RuntimeException(t('edi_err_modele'));
+        }
+        $texte = ins_modele_vers_ini($id, $m);
+    }
+    if (strlen($texte) > 200 * 1024) {
+        throw new RuntimeException(t('adm_up_taille'));
+    }
+    return [$texte, ins_analyser_formulaire($id, $texte)];
+}
+
+/** Champ cité dans un message d'erreur (« [nom] »), pour le signaler dans l'éditeur. */
+function ins_champ_en_erreur(string $msg): string
+{
+    return preg_match('/\[([a-z][a-z0-9_]*)\]/i', $msg, $m) ? $m[1] : '';
+}
+
+/** Effet sur le fichier de réponses : colonnes ajoutées / retirées, archivage à la prochaine réponse. */
+function ins_effet_colonnes(array $form): array
+{
+    $csv = ins_fichier_donnees($form);
+    $avant = is_file($csv) ? (ins_lire_csv($csv)[0] ?? []) : [];
+    $apres = ins_colonnes($form);
+    return [
+        'reponses'  => $avant ? max(0, count(ins_lire_csv($csv)) - 1) : 0,
+        'ajoutees'  => $avant ? array_values(array_diff($apres, $avant)) : [],
+        'retirees'  => $avant ? array_values(array_diff($avant, $apres)) : [],
+        'archivage' => $avant && $avant !== $apres,
+    ];
+}
+
+if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action'], ['editeur_apercu', 'editeur_enregistrer'], true))) {
+    $ajax = $_SERVER['REQUEST_METHOD'] === 'POST';
+    if (!$gestion) {
+        $ajax ? ins_json(['ok' => false, 'erreur' => t('adm_gestion_off')]) : exit(t('adm_gestion_off'));
+    }
+    if ($ajax) {
+        if (!hash_equals($jetonAdmin, (string)($_POST['_jeton'] ?? ''))) {
+            // Connecté, mais jeton d'une session précédente (reconnexion dans un autre onglet) : on renvoie le jeton
+            // actuel pour que l'éditeur recommence. Une page tierce ne peut pas lire cette réponse (même origine).
+            ins_json(['ok' => false, 'erreur' => t('adm_jeton'), 'jeton' => $jetonAdmin]);
+        }
+        $id = (string)($_POST['id'] ?? '');
+        $nouveau = !empty($_POST['nouveau']);
+        $idAnalyse = ins_id_valide($id) ? $id : 'nouveau';
+        try {
+            [$texte, $form] = ins_editeur_analyser($idAnalyse);
+        } catch (Throwable $ex) {
+            $r = ['ok' => false, 'erreur' => $ex->getMessage(), 'champ' => ins_champ_en_erreur($ex->getMessage())];
+            if (($_POST['source'] ?? '') !== 'texte') {
+                try {
+                    $r['ini'] = ins_modele_vers_ini($idAnalyse, (array)json_decode((string)($_POST['modele'] ?? ''), true));
+                } catch (Throwable $ex2) {
+                }
+            }
+            ins_json($r);
+        }
+        if ($_POST['action'] === 'editeur_apercu') {
+            ins_json(['ok' => true, 'ini' => $texte, 'modele' => ins_modele($form),
+                'apercu' => ins_apercu_document($form, (string)($_POST['langue'] ?? ''), (string)($_POST['choisi'] ?? '')),
+                'colonnes' => ins_effet_colonnes($form)]);
+        }
+        // Enregistrement
+        if (!ins_id_valide($id)) {
+            ins_json(['ok' => false, 'erreur' => t('adm_up_nom', ['nom' => $id]), 'champ' => '']);
+        }
+        try {
+            ins_preparer_dossier($dirForm);
+            if (!is_writable($dirForm)) {
+                throw new RuntimeException(t('adm_up_droits', ['dossier' => $dirForm]));
+            }
+            $chemin = $dirForm . '/' . $id . '.ini';
+            $existe = is_file($chemin);
+            if ($nouveau && $existe) {
+                throw new RuntimeException(t('adm_up_existe', ['nom' => $id]));
+            }
+            if (!$nouveau) {
+                if (!$existe) {
+                    throw new RuntimeException(t('introuvable'));
+                }
+                if (!hash_equals(sha1((string)file_get_contents($chemin)), (string)($_POST['version'] ?? ''))) {
+                    throw new RuntimeException(t('edi_err_version'));
+                }
+                ins_mettre_de_cote($dirForm, $id, 'remplace', true);
+            }
+            $tmp = $dirForm . '/.editeur-' . bin2hex(random_bytes(6)) . '.tmp';
+            if (@file_put_contents($tmp, $texte, LOCK_EX) === false || !@rename($tmp, $chemin)) {
+                @unlink($tmp);
+                throw new RuntimeException(t('err_ecriture', ['fichier' => $chemin]));
+            }
+        } catch (Throwable $ex) {
+            ins_json(['ok' => false, 'erreur' => $ex->getMessage(), 'champ' => '']);
+        }
+        ins_json(['ok' => true, 'version' => sha1($texte), 'message' => t($nouveau ? 'adm_ok_ajoute' : 'edi_ok_enregistre', ['id' => $id]),
+            'url' => 'admin.php?' . http_build_query(['a' => 'editeur', 'id' => $id])]);
+    }
+
+    // Page de l'éditeur : formulaire existant (?id=), nouveau à partir d'un modèle (?nouveau=) ou d'une copie (?copie=)
+    $id = isset($_GET['id']) && is_string($_GET['id']) ? $_GET['id'] : '';
+    $modeles = ins_modeles_depart();
+    $nouveau = $id === '';
+    $erreurInitiale = '';
+    if (!$nouveau) {
+        if (!ins_id_valide($id) || !is_file($dirForm . '/' . $id . '.ini')) {
+            http_response_code(404);
+            exit(t('introuvable'));
+        }
+        $texte = (string)file_get_contents($dirForm . '/' . $id . '.ini');
+        $version = sha1($texte);
+    } else {
+        $copie = isset($_GET['copie']) && is_string($_GET['copie']) ? $_GET['copie'] : '';
+        $choix = isset($_GET['nouveau']) && is_string($_GET['nouveau']) ? $_GET['nouveau'] : 'vide';
+        $copieValide = $copie !== '' && ins_id_valide($copie) && is_file($dirForm . '/' . $copie . '.ini');
+        $texte = $copieValide
+            ? (string)file_get_contents($dirForm . '/' . $copie . '.ini')
+            : ($modeles[$choix] ?? $modeles['vide']);
+        $version = '';
+    }
+    $texte = preg_replace('/^\xEF\xBB\xBF/', '', str_replace("\r\n", "\n", $texte)) ?? $texte;
+    $modele = null;
+    try {
+        $modele = ins_modele(ins_analyser_formulaire($nouveau ? 'nouveau' : $id, $texte));
+        if ($nouveau) {
+            // Une copie ne doit jamais partager le fichier de réponses (ni les accès) de l'original
+            $modele['formulaire']['fichier'] = '';
+        }
+    } catch (Throwable $ex) {
+        $erreurInitiale = $ex->getMessage();
+    }
+    $textes = [];
+    foreach (ins_textes('fr') as $k => $v) {
+        if (strpos($k, 'edi_') === 0 || strpos($k, 'type_') === 0) {
+            $textes[$k] = t($k);
+        }
+    }
+    $donnees = [
+        'id' => $id, 'nouveau' => $nouveau, 'version' => $version, 'ini' => $texte, 'modele' => $modele,
+        'erreur' => $erreurInitiale, 'jeton' => $jetonAdmin, 'types' => INS_TYPES, 'proprietes' => INS_PROPRIETES_TYPE,
+        'reserves' => INS_NOMS_RESERVES, 'langue_config' => (string)$cfg['langue'],
+        'langues' => array_map(function ($c) { return ['code' => $c, 'nom' => ins_textes($c)['nom_langue'] ?? $c]; }, ins_langues()),
+        'existants' => array_values(array_map(function ($f) { return basename($f, '.ini'); }, glob($dirForm . '/*.ini') ?: [])),
+        'textes' => $textes,
+    ];
+    ins_entete($nouveau ? t('edi_titre_nouveau') : t('edi_titre', ['id' => $id]));
+    echo '<script>document.querySelector("main").className="large"</script>';
+    echo '<style>' . (string)@file_get_contents(INS_PRIVE . '/editeur.css') . '</style>';
+    echo '<div id="editeur"><noscript>' . e(t('edi_sans_js')) . '</noscript></div>';
+    echo '<script>window.INS_EDITEUR=' . json_encode($donnees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP) . ';</script>';
+    echo '<script>' . (string)@file_get_contents(INS_PRIVE . '/editeur.js') . '</script>';
+    ins_pied();
+    exit;
+}
+
 /* ---------- Téléchargements ---------- */
 if ($action === 'telecharger') {
     $n = ins_fichier_demande($dir, $_GET['fichier'] ?? '');
@@ -504,6 +672,9 @@ foreach ($formulaires as $id => $form) {
     echo '<div class="champ">';
     if (is_string($form)) {
         echo '<b>' . e($id) . '.ini</b><div class="alerte">' . e($form) . '</div>';
+        if ($gestion) {
+            echo '<a class="btn" href="?a=editeur&amp;id=' . e(rawurlencode($id)) . '">' . e(t('adm_modifier_texte')) . '</a> ';
+        }
         echo '<a class="btn sec" href="?a=ini&amp;id=' . e(rawurlencode($id)) . '">' . e(t('adm_telecharger_ini')) . '</a>';
         if ($gestion) {
             echo ins_bouton_suppression('supprimer', 'id', $id, t('adm_supprimer_form'), $jetonAdmin);
@@ -540,6 +711,9 @@ foreach ($formulaires as $id => $form) {
             echo '<div class="petit">' . e(t('adm_lien_explication')) . '</div>';
         }
     }
+    if ($gestion) {
+        echo '<a class="btn" href="?a=editeur&amp;id=' . e(rawurlencode($id)) . '">' . e(t('adm_modifier')) . '</a> ';
+    }
     if ($nb > 0 || is_file($dir . '/' . $n)) {
         echo '<a class="btn" href="?a=telecharger&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_telecharger')) . ' ' . e($n) . '</a> '
             . '<a class="btn sec" href="?a=voir&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_voir')) . '</a> ';
@@ -550,6 +724,24 @@ foreach ($formulaires as $id => $form) {
         if (is_file($dir . '/' . $n)) {
             echo ins_bouton_suppression('supprimer_csv', 'fichier', $n, t('adm_supprimer_csv'), $jetonAdmin);
         }
+    }
+    echo '</div>';
+}
+
+/* ---------- Création dans l'éditeur ---------- */
+if ($gestion) {
+    echo '<h2>' . e(t('adm_creer')) . '</h2><div class="champ"><p class="petit">' . e(t('adm_creer_aide')) . '</p>';
+    foreach (['vide' => 'adm_creer_vide', 'inscription' => 'adm_creer_inscription', 'sondage' => 'adm_creer_sondage'] as $m => $cle) {
+        echo '<a class="btn" href="?a=editeur&amp;nouveau=' . $m . '">' . e(t($cle)) . '</a> ';
+    }
+    $valides = array_keys(array_filter($formulaires, 'is_array'));
+    if ($valides) {
+        echo '<form method="get" style="display:inline-flex;gap:.3rem;align-items:center;margin-left:.4rem"><input type="hidden" name="a" value="editeur">'
+            . '<select name="copie" aria-label="' . e(t('adm_creer_copie')) . '" style="width:auto">';
+        foreach ($valides as $v) {
+            echo '<option value="' . e($v) . '">' . e($v) . '</option>';
+        }
+        echo '</select><button class="sec">' . e(t('adm_creer_copie')) . '</button></form>';
     }
     echo '</div>';
 }

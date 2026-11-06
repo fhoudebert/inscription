@@ -2,7 +2,8 @@
 
 [← Retour au README](../README.md) · [Créer un formulaire](formulaires.md)
 
-Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Récupérer les réponses](#récupérer-les-réponses) ·
+Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Éditeur de formulaires](#éditeur-de-formulaires) ·
+[Récupérer les réponses](#récupérer-les-réponses) ·
 [Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
 [Langues de l'interface](#langues-de-linterface) · [Sécurité](#sécurité) · [Dépannage](#dépannage)
 
@@ -41,16 +42,59 @@ Puis, pour chaque formulaire :
 - **lien de partage** avec boutons **Copier** et **Ouvrir** — c'est le lien à envoyer pour un formulaire non diffusé
   (voir [Diffusion et lien de partage](formulaires.md#diffusion-et-lien-de-partage)) ; pour un formulaire à accès restreint,
   il est remplacé par la rubrique **Gérer les accès** (voir [Accès personnels](#accès-personnels)) ;
-- **Télécharger** le fichier de réponses (`.csv`), **Voir** les réponses dans un tableau, **Télécharger le descripteur (.ini)** ;
+- **Modifier** (ouvre l'[éditeur](#éditeur-de-formulaires)), **Télécharger** le fichier de réponses (`.csv`), **Voir** les réponses
+  dans un tableau, **Télécharger le descripteur (.ini)** ;
 - **Supprimer le formulaire**, **Supprimer les réponses** (voir [Gérer les formulaires](#gérer-les-formulaires)).
 
-Un formulaire mal écrit apparaît avec le détail de l'erreur, pour le corriger.
-En bas : l'ajout d'un formulaire, et la rubrique « Autres fichiers » (anciennes versions de fichiers de réponses,
-réponses des formulaires supprimés).
+Un formulaire mal écrit apparaît avec le détail de l'erreur et un bouton **Corriger dans l'éditeur**.
+En bas : **Créer un formulaire**, l'envoi d'un fichier `.ini`, et la rubrique « Autres fichiers » (anciennes versions
+de fichiers de réponses, réponses des formulaires supprimés).
 
 **Désactiver la page** : `'admin_actif' => false` dans `prive/config.php`. `admin.php` répond alors « Page introuvable »
 (vous pouvez aussi supprimer le fichier) ; tout se fait par FTP. Le test automatique n'étant plus affiché,
 vérifiez la protection à la main (voir [Zone privée](#zone-privée)).
+
+## Éditeur de formulaires
+
+Pour créer ou modifier un formulaire sans écrire de `.ini` : bouton **Modifier** d'un formulaire, ou rubrique
+**Créer un formulaire** (formulaire vide, modèle « Inscription » ou « Sondage », ou copie d'un formulaire existant).
+L'éditeur demande `'admin_gestion' => true`, JavaScript et un écran d'ordinateur (sur un petit écran, les colonnes s'empilent).
+
+La page a trois colonnes :
+
+- **à gauche, la liste** : « Réglages du formulaire » puis les champs dans l'ordre d'affichage. Sur le champ sélectionné :
+  **↑ ↓** pour le déplacer, **⧉** pour le dupliquer, **✕** pour le supprimer. En bas, **Ajouter** un champ du type choisi
+  (il se place après le champ sélectionné). Un champ en erreur est encadré en rouge ;
+- **au milieu, les propriétés** du champ sélectionné, selon son type : question, nom de colonne, réponses possibles
+  (une par ligne), texte d'aide, exemple, obligatoire, valeur unique, bornes, valeur pré-remplie, et l'assistant
+  **Afficher si…** (choisir un champ placé avant, « est parmi » / « n'est pas parmi », cocher les réponses ;
+  plusieurs conditions = toutes à la fois). Pour les réglages du formulaire : titre, textes, période, places,
+  qui peut répondre (tout le monde, accès personnel), diffusion, langues, courriel de notification ;
+- **à droite, l'aperçu**, rafraîchi pendant la frappe et produit par le même code que la page publique : ce qu'on y voit
+  est ce que verront les répondants (conditions comprises : on peut cocher les réponses pour les essayer).
+  Un clic sur un champ de l'aperçu le sélectionne. Au-dessus : « Formulaire valide » ou l'erreur à corriger.
+
+Le **nom de colonne** d'un nouveau champ se déduit de sa question (« Nom et prénom » → `nom_et_prenom`) tant qu'on ne le
+modifie pas ; renommer un champ met à jour les conditions qui le visent. Supprimer un champ retire les conditions qui
+en dépendaient (après confirmation).
+
+**Formulaires multilingues** : dès qu'une autre langue est cochée dans les réglages, des onglets **Français (base) · English**
+apparaissent au-dessus des propriétés ; dans l'onglet d'une autre langue, seuls les textes se traduisent, avec le texte
+de base en rappel. Une liste de réponses traduite qui n'a pas le même nombre de lignes que l'originale est signalée.
+La langue de l'aperçu se choisit en haut de l'aperçu.
+
+**Enregistrer** (ou Ctrl+S) : le fichier est vérifié comme un fichier envoyé ; l'ancienne version est conservée dans
+`prive/formulaires/supprimes/`. Si les colonnes changent alors que des réponses existent, l'éditeur l'indique en permanence
+au-dessus de l'aperçu et demande confirmation (le fichier de réponses actuel sera archivé à la prochaine réponse).
+Si le fichier a été modifié entre-temps (par FTP ou dans une autre fenêtre), l'enregistrement est refusé : rechargez la page.
+Pour un nouveau formulaire, indiquez d'abord son **nom dans l'adresse** (en haut de page).
+
+**Mode texte** : bouton en haut de page, pour éditer le `.ini` directement, avec la même vérification et le même aperçu.
+On ne revient au mode visuel qu'avec un texte valide. C'est aussi par là qu'on corrige un formulaire mal écrit.
+
+Bon à savoir : un enregistrement depuis l'éditeur **réécrit tout le fichier**. Les commentaires (`;`) écrits à la main
+disparaissent, les clés anglaises sont réécrites en français et l'ordre des clés est normalisé ; le contenu, lui,
+est strictement le même. L'ancienne version reste dans `supprimes/`. En mode texte, le texte est enregistré tel quel.
 
 ## Récupérer les réponses
 
@@ -251,3 +295,6 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | « Cet accès n'est plus valable » | accès révoqué : **Réactiver** dans `admin.php` |
 | « Trop d'essais » | 10 mots de passe faux : attendre 15 minutes, ou **Réactiver** l'accès dans `admin.php` |
 | mot de passe perdu | **Nouveau mot de passe** sur la ligne de l'accès, puis le transmettre à la personne |
+| l'éditeur refuse d'enregistrer : « modifié entre-temps » | le fichier a changé depuis l'ouverture de l'éditeur (FTP, autre fenêtre) : recharger la page |
+| l'éditeur reste vide | JavaScript désactivé dans le navigateur |
+| « Votre session d'administration a expiré » dans l'éditeur | connexion de plus de 4 h : se reconnecter dans un autre onglet, puis enregistrer (les modifications restent dans l'éditeur) |
