@@ -213,6 +213,9 @@ if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action
         $idAnalyse = ins_id_valide($id) ? $id : 'nouveau';
         try {
             [$texte, $form] = ins_editeur_analyser($idAnalyse);
+            if ($idAnalyse !== 'nouveau' || ins_id_valide($id)) {
+                ins_verifier_fichier_unique($form); // vérifié dès l'aperçu, donc aussi à l'enregistrement
+            }
         } catch (Throwable $ex) {
             $r = ['ok' => false, 'erreur' => $ex->getMessage(), 'champ' => ins_champ_en_erreur($ex->getMessage())];
             if (($_POST['source'] ?? '') !== 'texte') {
@@ -388,6 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             try {
                 $nouveau = ins_charger_formulaire($nom, $tmp); // vérification complète AVANT installation
+                ins_verifier_fichier_unique($nouveau);
             } catch (Throwable $ex) {
                 @unlink($tmp);
                 $detail = $ex->getMessage();
@@ -668,6 +672,12 @@ if (!$formulaires) {
     echo '<p>' . e(t('adm_aucun_formulaire')) . '</p>';
 }
 $fichiersVus = [];
+$parFichier = [];
+foreach ($formulaires as $id => $form) {
+    if (is_array($form)) {
+        $parFichier[$form['fichier']][] = $id;
+    }
+}
 foreach ($formulaires as $id => $form) {
     echo '<div class="champ">';
     if (is_string($form)) {
@@ -695,6 +705,10 @@ foreach ($formulaires as $id => $form) {
         $etiquette = '<span class="etiq prive">' . e(t('adm_non_diffuse')) . '</span>';
     }
     echo '<b>' . e($form['titre']) . '</b> <span class="petit">(' . e($id) . '.ini)</span> ' . $etiquette . '<br>';
+    if (count($parFichier[$form['fichier']]) > 1) {
+        echo '<div class="alerte">' . e(t('adm_fichier_partage', ['fichier' => $form['fichier'],
+            'autres' => implode(', ', array_diff($parFichier[$form['fichier']], [$id]))])) . '</div>';
+    }
     echo e(t('adm_nb_reponses', ['n' => $nb])) . ($form['places'] ? ' / ' . e(t('adm_places', ['n' => $form['places']])) : '');
     echo ' · ' . ($etat === '' ? e(t('adm_ouvert')) : e($etat));
     if (ins_multilingue($form)) {

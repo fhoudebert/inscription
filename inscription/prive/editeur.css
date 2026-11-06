@@ -59,3 +59,11 @@ button[disabled]{opacity:.4;cursor:default}
   .edi-col-liste,.edi-col-props,.edi-col-apercu{position:static;max-height:none}
   .edi-iframe{height:36rem}
 }
+.edi-item{position:relative;padding-left:1.4rem}
+.edi-poignee{position:absolute;left:.35rem;top:.4rem;color:#9aa5b1;cursor:grab;font-size:.9rem;line-height:1}
+.edi-item:first-child{padding-left:.5rem}
+.edi-item.glisse{opacity:.45}
+.edi-item.cible-avant{box-shadow:0 -3px 0 0 var(--c)}
+.edi-item.cible-apres{box-shadow:0 3px 0 0 var(--c)}
+.edi-item:focus-visible{outline:2px solid var(--c);outline-offset:1px}
+.edi-raccourcis{margin-top:.6rem}

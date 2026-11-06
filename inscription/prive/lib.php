@@ -650,6 +650,35 @@ function ins_fichier_donnees(array $form): string
     return ins_dossier_donnees() . '/' . $form['fichier'] . '.csv';
 }
 
+/** Autres formulaires qui écrivent dans le même fichier de réponses (et les mêmes accès) que $form. */
+function ins_formulaires_meme_fichier(array $form): array
+{
+    $res = [];
+    foreach (glob(ins_dossier_formulaires() . '/*.ini') ?: [] as $f) {
+        $id = basename($f, '.ini');
+        if ($id === $form['id'] || !ins_id_valide($id)) {
+            continue;
+        }
+        try {
+            if (ins_charger_formulaire($id)['fichier'] === $form['fichier']) {
+                $res[] = $id;
+            }
+        } catch (Throwable $ex) {
+            // un formulaire mal écrit est signalé ailleurs
+        }
+    }
+    return $res;
+}
+
+/** Refuse un formulaire dont le fichier de réponses est déjà celui d'un autre formulaire. */
+function ins_verifier_fichier_unique(array $form): void
+{
+    $autres = ins_formulaires_meme_fichier($form);
+    if ($autres) {
+        throw new RuntimeException(t('err_fichier_partage', ['f' => $form['id'] . '.ini', 'fichier' => $form['fichier'], 'autres' => implode(', ', $autres)]));
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Diffusion et lien de partage                                       */
 /* ------------------------------------------------------------------ */

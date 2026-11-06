@@ -187,6 +187,12 @@
   }
 
   function dessinerListe() {
+    // Si la liste avait le focus (clavier), on le rend à l'élément choisi après l'avoir redessinée
+    var avaitFocus = liste.contains(document.activeElement) && document.activeElement.classList.contains('edi-item');
+    dessinerListeInterne();
+    if (avaitFocus) focaliserSelection();
+  }
+  function dessinerListeInterne() {
     vider(liste);
     var pb = problemesConditions();
     liste.appendChild(el('div', { classe: 'edi-item' + (S.sel === -1 ? ' actif' : ''), tabindex: '0', role: 'button',
@@ -197,8 +203,10 @@
       var item = el('div', { classe: 'edi-item' + (S.sel === i ? ' actif' : '') + (S.champErreur === c.nom || pb[i] ? ' erreur' : '')
         + (DECORATIFS.indexOf(c.type) >= 0 ? ' deco' : ''), tabindex: '0', role: 'button',
         onclick: function () { choisir(i); }, onkeydown: entree(function () { choisir(i); }) },
+        el('span', { classe: 'edi-poignee', title: T('edi_glisser'), 'aria-hidden': 'true', texte: '⠿' }),
         el('span', { classe: 'edi-item-titre', texte: (c.type === 'titre' ? '§ ' : '') + titre }),
         el('span', { classe: 'edi-item-meta', texte: T('type_' + c.type) + (c.obligatoire ? ' *' : '') + ((c.si || []).length ? ' · ' + T('edi_conditionnel') : '') }));
+      glisserDeposer(item, i);
       if (S.sel === i) {
         item.appendChild(el('span', { classe: 'edi-item-actions' },
           bouton('↑', T('edi_monter'), function () { deplacer(i, -1); }, i === 0),
@@ -208,10 +216,63 @@
       }
       liste.appendChild(item);
     });
+    // « Réglages » accepte un dépôt : le champ passe en tête
+    var reglages = liste.firstChild;
+    reglages.addEventListener('dragover', function (ev) { if (glisse === null) return; ev.preventDefault(); reglages.classList.add('cible-apres'); });
+    reglages.addEventListener('dragleave', function () { reglages.classList.remove('cible-apres'); });
+    reglages.addEventListener('drop', function (ev) { ev.preventDefault(); deposer(0); });
     var choixType = el('select', { 'aria-label': T('edi_type') },
       D.types.map(function (t) { return el('option', { value: t, texte: T('type_' + t) }); }));
     liste.appendChild(el('div', { classe: 'edi-ajout' }, choixType,
       el('button', { type: 'button', texte: '+ ' + T('edi_ajouter'), onclick: function () { ajouter(choixType.value); } })));
+    liste.appendChild(el('p', { classe: 'edi-aide edi-raccourcis', texte: T('edi_raccourcis') }));
+  }
+
+  /* Glisser-déposer : on attrape un champ et on le lâche au-dessus ou au-dessous d'un autre */
+  var glisse = null;
+  function nettoyerCibles() {
+    liste.querySelectorAll('.cible-avant,.cible-apres,.glisse').forEach(function (x) { x.classList.remove('cible-avant', 'cible-apres', 'glisse'); });
+  }
+  function glisserDeposer(item, i) {
+    item.draggable = true;
+    item.addEventListener('dragstart', function (ev) {
+      glisse = i;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', String(i)); // nécessaire pour Firefox
+      item.classList.add('glisse');
+    });
+    item.addEventListener('dragend', function () { glisse = null; nettoyerCibles(); });
+    item.addEventListener('dragover', function (ev) {
+      if (glisse === null) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      var r = item.getBoundingClientRect(), avant = ev.clientY < r.top + r.height / 2;
+      item.classList.toggle('cible-avant', avant);
+      item.classList.toggle('cible-apres', !avant);
+    });
+    item.addEventListener('dragleave', function () { item.classList.remove('cible-avant', 'cible-apres'); });
+    item.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      var r = item.getBoundingClientRect();
+      deposer(ev.clientY < r.top + r.height / 2 ? i : i + 1);
+    });
+  }
+  /** Déplace le champ glissé pour qu'il se retrouve à la position « pos » (index avant déplacement). */
+  function deposer(pos) {
+    var de = glisse;
+    glisse = null;
+    nettoyerCibles();
+    if (de === null) return;
+    var ch = S.modele.champs, c = ch[de];
+    ch.splice(de, 1);
+    if (pos > de) pos--;
+    ch.splice(pos, 0, c);
+    S.sel = pos;
+    if (pos !== de) changementStructure(); else { dessinerListe(); dessinerProps(); }
+  }
+  function focaliserSelection() {
+    var actif = liste.querySelector('.edi-item.actif');
+    if (actif) actif.focus();
   }
   function entree(f) { return function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); f(); } }; }
   function bouton(txt, titre, f, inactif) {
@@ -667,8 +728,31 @@
       .catch(function () { btnEnregistrer.disabled = false; dessinerStatut(T('edi_err_reseau'), 'alerte'); });
   }
   window.addEventListener('beforeunload', function (ev) { if (S.modifie) { ev.preventDefault(); ev.returnValue = ''; } });
+  /*
+   * Raccourcis : Ctrl+S enregistrer (partout) ; Alt+↑ / Alt+↓ déplacer le champ choisi ;
+   * hors zones de saisie : ↑ / ↓ choisir le champ précédent / suivant, Suppr supprimer, Inser ajouter.
+   */
   document.addEventListener('keydown', function (ev) {
-    if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); enregistrer(); }
+    if ((ev.ctrlKey || ev.metaKey) && (ev.key === 's' || ev.key === 'S')) { ev.preventDefault(); enregistrer(); return; }
+    if (S.mode !== 'visuel' || !S.modele) return;
+    var saisie = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.isContentEditable;
+    var haut = ev.key === 'ArrowUp', bas = ev.key === 'ArrowDown';
+    if (ev.altKey && !ev.ctrlKey && (haut || bas) && S.sel >= 0) {
+      ev.preventDefault();
+      deplacer(S.sel, haut ? -1 : 1);
+      focaliserSelection();
+    } else if (!saisie && !ev.altKey && !ev.ctrlKey && !ev.metaKey && (haut || bas)) {
+      ev.preventDefault();
+      choisir(Math.max(-1, Math.min(S.modele.champs.length - 1, S.sel + (haut ? -1 : 1))));
+      focaliserSelection();
+    } else if (!saisie && ev.key === 'Delete' && S.sel >= 0) {
+      ev.preventDefault();
+      supprimer(S.sel);
+      focaliserSelection();
+    } else if (!saisie && ev.key === 'Insert') {
+      ev.preventDefault();
+      ajouter(liste.querySelector('.edi-ajout select').value);
+    }
   });
 
   /* ---------- Démarrage ---------- */

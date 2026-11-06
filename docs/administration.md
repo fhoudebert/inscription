@@ -47,6 +47,8 @@ Puis, pour chaque formulaire :
 - **Supprimer le formulaire**, **Supprimer les réponses** (voir [Gérer les formulaires](#gérer-les-formulaires)).
 
 Un formulaire mal écrit apparaît avec le détail de l'erreur et un bouton **Corriger dans l'éditeur**.
+Deux formulaires qui écrivent dans le même fichier de réponses (copie par FTP d'un `.ini` contenant `fichier = …`)
+sont signalés par une alerte rouge sur chacun d'eux : réponses mélangées et places partagées, à corriger.
 En bas : **Créer un formulaire**, l'envoi d'un fichier `.ini`, et la rubrique « Autres fichiers » (anciennes versions
 de fichiers de réponses, réponses des formulaires supprimés).
 
@@ -62,9 +64,10 @@ L'éditeur demande `'admin_gestion' => true`, JavaScript et un écran d'ordinate
 
 La page a trois colonnes :
 
-- **à gauche, la liste** : « Réglages du formulaire » puis les champs dans l'ordre d'affichage. Sur le champ sélectionné :
-  **↑ ↓** pour le déplacer, **⧉** pour le dupliquer, **✕** pour le supprimer. En bas, **Ajouter** un champ du type choisi
-  (il se place après le champ sélectionné). Un champ en erreur est encadré en rouge ;
+- **à gauche, la liste** : « Réglages du formulaire » puis les champs dans l'ordre d'affichage. On réordonne les champs
+  en les **glissant-déposant** (poignée ⠿ ; lâcher un champ sur « Réglages du formulaire » le met en tête), ou avec les boutons
+  **↑ ↓** du champ sélectionné, qui a aussi **⧉** pour le dupliquer et **✕** pour le supprimer. En bas, **Ajouter** un champ
+  du type choisi (il se place après le champ sélectionné). Un champ en erreur est encadré en rouge ;
 - **au milieu, les propriétés** du champ sélectionné, selon son type : question, nom de colonne, réponses possibles
   (une par ligne), texte d'aide, exemple, obligatoire, valeur unique, bornes, valeur pré-remplie, et l'assistant
   **Afficher si…** (choisir un champ placé avant, « est parmi » / « n'est pas parmi », cocher les réponses ;
@@ -83,10 +86,16 @@ apparaissent au-dessus des propriétés ; dans l'onglet d'une autre langue, seul
 de base en rappel. Une liste de réponses traduite qui n'a pas le même nombre de lignes que l'originale est signalée.
 La langue de l'aperçu se choisit en haut de l'aperçu.
 
+**Raccourcis clavier** : **Ctrl+S** enregistrer ; **Alt+↑ / Alt+↓** déplacer le champ sélectionné (même pendant la saisie) ;
+en dehors des zones de saisie : **↑ / ↓** choisir le champ précédent ou suivant, **Suppr** supprimer le champ (après confirmation),
+**Inser** ajouter un champ du type affiché sous la liste.
+
 **Enregistrer** (ou Ctrl+S) : le fichier est vérifié comme un fichier envoyé ; l'ancienne version est conservée dans
 `prive/formulaires/supprimes/`. Si les colonnes changent alors que des réponses existent, l'éditeur l'indique en permanence
 au-dessus de l'aperçu et demande confirmation (le fichier de réponses actuel sera archivé à la prochaine réponse).
 Si le fichier a été modifié entre-temps (par FTP ou dans une autre fenêtre), l'enregistrement est refusé : rechargez la page.
+Il l'est aussi si le **fichier de réponses** (Réglages avancés) est déjà celui d'un autre formulaire : l'erreur apparaît dès
+l'aperçu ; laissez le nom vide (nom du formulaire) ou choisissez-en un autre.
 Pour un nouveau formulaire, indiquez d'abord son **nom dans l'adresse** (en haut de page).
 
 **Mode texte** : bouton en haut de page, pour éditer le `.ini` directement, avec la même vérification et le même aperçu.
@@ -134,6 +143,8 @@ Depuis `admin.php`, sans FTP (réglage `'admin_gestion' => true`, par défaut) :
 
 Garde-fous :
 - le fichier envoyé est **entièrement vérifié avant d'être installé** (syntaxe, types, options, conditions, langues, UTF-8) ;
+- il est refusé si son fichier de réponses (clé `fichier`, ou nom du formulaire) est déjà celui d'un autre formulaire —
+  ce qui arrive en copiant un `.ini` qui contient une ligne `fichier = …` ;
   en cas d'erreur, rien n'est modifié et le message indique l'erreur (champ ou ligne en cause) ;
 - 200 Ko au plus, nom limité à lettres non accentuées, chiffres, `-` et `_`, extension `.ini` imposée :
   le fichier ne peut jamais devenir un programme exécutable ;
@@ -297,4 +308,5 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | mot de passe perdu | **Nouveau mot de passe** sur la ligne de l'accès, puis le transmettre à la personne |
 | l'éditeur refuse d'enregistrer : « modifié entre-temps » | le fichier a changé depuis l'ouverture de l'éditeur (FTP, autre fenêtre) : recharger la page |
 | l'éditeur reste vide | JavaScript désactivé dans le navigateur |
+| « le fichier de réponses … est déjà celui du formulaire … » | le `.ini` (souvent une copie) contient `fichier = …` comme un autre formulaire : retirer la ligne, ou vider « Nom du fichier de réponses » dans l'éditeur |
 | « Votre session d'administration a expiré » dans l'éditeur | connexion de plus de 4 h : se reconnecter dans un autre onglet, puis enregistrer (les modifications restent dans l'éditeur) |

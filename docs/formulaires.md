@@ -44,7 +44,7 @@ Réglages de la section `[formulaire]` :
 | `intro`     | texte d'introduction | — |
 | `merci`     | message affiché après l'envoi | « Merci, votre réponse est enregistrée. » |
 | `bouton`    | texte du bouton d'envoi | « Envoyer » |
-| `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) | le nom du formulaire |
+| `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) ; deux formulaires ne peuvent pas avoir le même (pensez-y en copiant un `.ini`) | le nom du formulaire |
 | `ouverture` | date/heure d'ouverture : `"2026-11-15"` ou `"2026-11-15 09:00"` | — |
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
