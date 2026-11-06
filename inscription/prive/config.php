@@ -46,6 +46,13 @@ return [
     // Symbole monétaire des formulaires de commande (champ « commande »)
     'devise'              => '€',
 
+    // Logo par défaut, affiché à gauche du titre de chaque page publique : nom d'une image de prive/images/
+    // (PNG, JPEG, GIF ou WebP ; à envoyer depuis admin.php → Images ou par FTP). Vide = pas de logo.
+    // Un formulaire peut en choisir un autre (logo = …) ou aucun (logo = non).
+    'logo'                => '',
+    // Texte de remplacement du logo (lu par les lecteurs d'écran), par exemple le nom de l'association.
+    'logo_texte'          => '',
+
     // true : affiche le détail des erreurs (descripteur mal écrit…). À remettre à false ensuite.
     'debug'               => false,
 ];

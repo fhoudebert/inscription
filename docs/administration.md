@@ -5,7 +5,7 @@
 Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Éditeur de formulaires](#éditeur-de-formulaires) ·
 [Récupérer les réponses](#récupérer-les-réponses) ·
 [Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Catalogues et commandes](#catalogues-et-commandes) ·
-[Zone privée](#zone-privée) · [Réglages](#réglages) ·
+[Images](#images) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
 [Langues de l'interface](#langues-de-linterface) · [Sécurité](#sécurité) · [Dépannage](#dépannage)
 
 ## Installation
@@ -235,6 +235,22 @@ Si le client modifie sa commande après sa préparation (formulaire à accès re
 Le détail des commandes est dans `prive/donnees/commandes/<fichier>.json` ; il est supprimé avec le fichier de réponses
 (**Supprimer les réponses**). Créer, modifier un catalogue et préparer une commande demandent `'admin_gestion' => true`.
 
+## Images
+
+Rubrique **Images (logos)** du tableau de bord : les images de `prive/images/`, avec leur taille et les formulaires qui les
+utilisent (ou « logo du site »). On peut y **ajouter une image** (PNG, JPEG, GIF ou WebP, 1 Mo au plus ; SVG refusé) et
+**supprimer** une image inutilisée — une image encore utilisée ne peut pas être supprimée.
+
+- Le type est vérifié sur le contenu du fichier, pas sur son nom ; le nom est simplifié (`Logo Asso été.JPG` → `logo-asso-ete.jpg`)
+  et numéroté s'il existe déjà.
+- Les images restent dans la zone privée : `index.php?image=<nom>` les sert (avec cache navigateur), sans ouvrir le reste du dossier.
+- Dans l'éditeur, **Réglages du formulaire → Logo** : choisir le logo du site, aucun logo ou une image, ou en envoyer une nouvelle,
+  et saisir le texte de remplacement. L'aperçu l'affiche aussitôt.
+- **Logo du site** : `'logo' => 'mon-logo.png'` dans `prive/config.php` (et `'logo_texte'`), affiché sur toutes les pages
+  publiques sauf celles des formulaires qui ont `logo = …` ou `logo = non`. Un logo introuvable est signalé en rouge.
+- Ajouter ou supprimer une image demande `'admin_gestion' => true` ; par FTP, déposez simplement le fichier dans `prive/images/`
+  (nom en lettres, chiffres, `-` et `_`).
+
 ## Zone privée
 
 Les réponses contiennent des données personnelles : personne ne doit pouvoir lire
@@ -312,6 +328,7 @@ Fichier `prive/config.php` :
 | `longueur_max` | longueur maximale d'une réponse |
 | `expediteur` | adresse d'expédition des notifications (souvent obligatoirement une adresse de votre domaine) |
 | `devise` | symbole monétaire des formulaires de commande : `€` (défaut), `CHF`, `$`… |
+| `logo`, `logo_texte` | logo par défaut à gauche du titre des pages publiques (image de `prive/images/`) et son texte de remplacement ; vide = aucun (voir [Images](#images)) |
 | `debug` | `true` : affiche le détail des erreurs (à remettre à `false` ensuite) |
 
 ## Langues de l'interface
@@ -368,6 +385,8 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | l'éditeur refuse d'enregistrer : « modifié entre-temps » | le fichier a changé depuis l'ouverture de l'éditeur (FTP, autre fenêtre) : recharger la page |
 | l'éditeur reste vide | JavaScript désactivé dans le navigateur |
 | « … utilise le catalogue …, introuvable » | le catalogue nommé par `catalogue =` n'existe pas dans `prive/catalogues/` : le créer (rubrique Catalogues) ou corriger le nom |
+| « logo … invalide » | la clé `logo =` contient un chemin ou une extension inconnue : mettre seulement le nom d'une image de `prive/images/` (ou `non`) |
+| le logo ne s'affiche pas | image absente de `prive/images/` (alerte dans `admin.php`), ou `logo = non` dans le formulaire |
 | un produit n'apparaît pas sur le formulaire de commande | il n'est pas coché « disponible » dans le catalogue |
 | « le fichier de réponses … est déjà celui du formulaire … » | le `.ini` (souvent une copie) contient `fichier = …` comme un autre formulaire : retirer la ligne, ou vider « Nom du fichier de réponses » dans l'éditeur |
 | « Votre session d'administration a expiré » dans l'éditeur | connexion de plus de 4 h : se reconnecter dans un autre onglet, puis enregistrer (les modifications restent dans l'éditeur) |

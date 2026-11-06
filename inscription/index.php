@@ -18,6 +18,9 @@ try {
     }
     require INS_PRIVE . '/lib.php';
     $cfg = ins_config();
+    if (isset($_GET['image']) && is_string($_GET['image'])) {
+        ins_servir_image($_GET['image']); // logos rangés dans la zone privée
+    }
 } catch (Throwable $ex) {
     error_log('inscription : ' . $ex->getMessage());
     http_response_code(500);
@@ -31,7 +34,7 @@ function ins_erreur_page(int $code, string $titre, string $detail = ''): void
 {
     http_response_code($code);
     ins_entete($titre);
-    echo '<h1>' . e($titre) . '</h1>';
+    echo ins_tete($titre);
     if ($detail !== '' && ins_config()['debug']) {
         echo '<pre class="alerte">' . e($detail) . '</pre>';
     }
@@ -55,7 +58,7 @@ if ($fid === '') {
     } else {
         ins_entete(t('liste_titre'));
         echo ins_liens_langues(ins_langues(), $lgAccueil);
-        echo '<h1>' . e(t('liste_titre')) . '</h1>';
+        echo ins_tete(t('liste_titre'));
         if (!$liste) {
             echo '<p>' . e(t('liste_vide')) . '</p>';
         } else {
@@ -137,7 +140,7 @@ if ($form['acces'] !== '') {
             }
             ins_entete($form['titre']);
             echo $liensLangues;
-            echo '<h1>' . e($form['titre']) . '</h1>';
+            echo ins_tete($form['titre'], $form);
             echo '<div class="info">' . e(t('acces_connexion_intro')) . '</div>';
             if ($erreurConnexion !== '') {
                 echo '<div class="alerte" role="alert">' . e($erreurConnexion) . '</div>';
@@ -213,7 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 ins_entete($form['titre']);
 echo $liensLangues;
-echo '<h1>' . e($form['titre']) . '</h1>';
+echo ins_tete($form['titre'], $form);
 
 /* ---------- Page de remerciement ---------- */
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {

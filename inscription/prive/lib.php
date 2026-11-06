@@ -21,7 +21,10 @@ const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage te
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
-const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message'];
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte'];
+// Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
+const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
 const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
@@ -49,6 +52,7 @@ const INS_ALIAS_TYPES = [
 const INS_CLES_FORMULAIRE = [
     'titre' => ['titre', 'title'], 'intro' => ['intro', 'introduction'], 'merci' => ['merci', 'thanks'],
     'bouton' => ['bouton', 'button'], 'fichier' => ['fichier', 'file'], 'message' => ['message'],
+    'logo' => ['logo'], 'logo_texte' => ['logo_texte', 'logo_text', 'logo_alt'],
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
@@ -85,6 +89,8 @@ function ins_config(): array
             'expediteur'          => '',
             'debug'               => false,
             'devise'              => '€',
+            'logo'                => '',
+            'logo_texte'          => '',
         ];
         $fichier = INS_PRIVE . '/config.php';
         $c = is_file($fichier) ? require $fichier : [];
@@ -390,6 +396,8 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'merci'           => trim((string)$lit('merci')),   // vide = texte par défaut de la langue
         'bouton'          => trim((string)$lit('bouton')),  // idem
         'message'         => trim((string)$lit('message')), // message de commande (vide = texte par défaut)
+        'logo'            => trim((string)$lit('logo')),    // image de prive/images/ ; vide = logo du site ; « non » = aucun
+        'logo_texte'      => trim((string)$lit('logo_texte')),
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
@@ -417,6 +425,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
     }
     if (!ins_id_valide($form['fichier'])) {
         throw new RuntimeException(t('err_fichier', ['f' => $f]));
+    }
+    if (in_array(ins_minuscules($form['logo']), ['non', 'aucun', 'no', 'none'], true)) {
+        $form['logo'] = 'non';
+    } elseif ($form['logo'] !== '' && !ins_image_valide($form['logo'])) {
+        throw new RuntimeException(t('err_logo', ['f' => $f, 'logo' => $form['logo']]));
     }
 
     $vus = [];
@@ -1575,6 +1588,138 @@ function ins_verifier_jeton(string $fid, $jeton): string
 }
 
 /* ------------------------------------------------------------------ */
+/* Images (logos)                                                     */
+/* ------------------------------------------------------------------ */
+
+function ins_dossier_images(): string
+{
+    $dir = INS_PRIVE . '/images';
+    ins_preparer_dossier($dir);
+    return $dir;
+}
+
+/** Nom d'image acceptable : lettres, chiffres, - et _, extension d'image connue (jamais de chemin). */
+function ins_image_valide(string $nom): bool
+{
+    return (bool)preg_match('/^[a-z0-9][a-z0-9_-]{0,80}\.(png|jpe?g|gif|webp)$/i', $nom);
+}
+
+/** @return string[] images disponibles */
+function ins_images(): array
+{
+    $res = [];
+    foreach (glob(INS_PRIVE . '/images/*') ?: [] as $f) {
+        if (is_file($f) && ins_image_valide(basename($f))) {
+            $res[] = basename($f);
+        }
+    }
+    sort($res, SORT_NATURAL | SORT_FLAG_CASE);
+    return $res;
+}
+
+/**
+ * Enregistre une image envoyée : type lu dans le contenu (pas dans le nom), PNG / JPEG / GIF / WebP seulement,
+ * 1 Mo et 4000 × 4000 au plus ; le nom est nettoyé et l'extension fixée par le serveur.
+ * @return string nom de l'image enregistrée
+ */
+function ins_enregistrer_image(string $tmp, string $nomOrigine): string
+{
+    if (!is_file($tmp) || filesize($tmp) > 1024 * 1024) {
+        throw new RuntimeException(t('img_trop_grosse'));
+    }
+    $info = @getimagesize($tmp);
+    if (!$info || !isset(INS_TYPES_IMAGE[$info[2]])) {
+        throw new RuntimeException(t('img_type'));
+    }
+    if ($info[0] < 1 || $info[1] < 1 || $info[0] > 4000 || $info[1] > 4000) {
+        throw new RuntimeException(t('img_dimensions'));
+    }
+    $ext = INS_TYPES_IMAGE[$info[2]];
+    $base = pathinfo($nomOrigine, PATHINFO_FILENAME);
+    $base = strtolower(function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $base) : $base);
+    $base = trim((string)preg_replace('/[^a-z0-9]+/', '-', $base), '-') ?: 'image';
+    $base = substr($base, 0, 60);
+    $dir = ins_dossier_images();
+    $nom = $base . '.' . $ext;
+    for ($i = 2; is_file($dir . '/' . $nom); $i++) {
+        $nom = $base . '-' . $i . '.' . $ext;
+    }
+    if (!@move_uploaded_file($tmp, $dir . '/' . $nom) && !@rename($tmp, $dir . '/' . $nom)) {
+        throw new RuntimeException(t('err_ecriture', ['fichier' => $nom]));
+    }
+    return $nom;
+}
+
+/** Envoie une image de prive/images/ au navigateur (appelé par index.php?image=…), avec mise en cache. */
+function ins_servir_image(string $nom): void
+{
+    $f = INS_PRIVE . '/images/' . $nom;
+    if (!ins_image_valide($nom) || !is_file($f)) {
+        http_response_code(404);
+        exit;
+    }
+    $ext = strtolower(pathinfo($nom, PATHINFO_EXTENSION));
+    $etag = '"' . substr(sha1($nom . filemtime($f) . filesize($f)), 0, 16) . '"';
+    header('Content-Type: ' . INS_MIME_IMAGE[$ext]);
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; sandbox");
+    header('Cache-Control: public, max-age=2592000');
+    header('ETag: ' . $etag);
+    if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+        http_response_code(304);
+        exit;
+    }
+    header('Content-Length: ' . filesize($f));
+    readfile($f);
+    exit;
+}
+
+/** Taille de fichier lisible : 12 Ko, 1,2 Mo. */
+function ins_taille_lisible(int $o): string
+{
+    if ($o < 1024 * 1024) {
+        return t('taille_ko', ['n' => max(1, (int)round($o / 1024))]);
+    }
+    return t('taille_mo', ['n' => number_format($o / 1048576, 1, t('decimale'), '')]);
+}
+
+/** Adresse d'une image (relative à index.php / admin.php), avec un repère de version pour le cache. */
+function ins_url_image(string $nom): string
+{
+    $f = INS_PRIVE . '/images/' . $nom;
+    return 'index.php?' . http_build_query(['image' => $nom, 'v' => is_file($f) ? substr(sha1((string)filemtime($f)), 0, 8) : '0']);
+}
+
+/** Logo à afficher : celui du formulaire, sinon celui du site (config.php) ; « non » = aucun. Null si absent. */
+function ins_logo(?array $form = null): ?array
+{
+    $cfg = ins_config();
+    $nom = $form !== null ? $form['logo'] : '';
+    $texte = $form !== null ? $form['logo_texte'] : '';
+    if ($nom === 'non') {
+        return null;
+    }
+    if ($nom === '') {
+        $nom = (string)$cfg['logo'];
+        $texte = $texte !== '' ? $texte : (string)$cfg['logo_texte'];
+    }
+    if ($nom === '' || !ins_image_valide($nom) || !is_file(INS_PRIVE . '/images/' . $nom)) {
+        return null;
+    }
+    return ['nom' => $nom, 'texte' => $texte];
+}
+
+/** En-tête de page : logo à gauche du titre. */
+function ins_tete(string $titre, ?array $form = null): string
+{
+    $logo = ins_logo($form);
+    if ($logo === null) {
+        return '<h1>' . e($titre) . '</h1>';
+    }
+    return '<header class="tete"><img src="' . e(ins_url_image($logo['nom'])) . '" alt="' . e($logo['texte']) . '"><h1>' . e($titre) . '</h1></header>';
+}
+
+/* ------------------------------------------------------------------ */
 /* Commandes : catalogues, montants, détail des commandes             */
 /* ------------------------------------------------------------------ */
 
@@ -2145,7 +2290,7 @@ const INS_PROPRIETES_TYPE = [
 function ins_modele(array $form): array
 {
     $g = [];
-    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
         $g[$k] = (string)$form[$k];
     }
     // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
@@ -2251,6 +2396,16 @@ function ins_modele_vers_ini(string $id, array $m): string
         }
         $ecrire($l, $k, ins_modele_texte($g[$k] ?? ''), $tr);
     }
+    $logo = ins_modele_texte($g['logo'] ?? '');
+    if ($logo !== '' && $logo !== 'non' && !ins_image_valide($logo)) {
+        throw new RuntimeException(t('err_logo', ['f' => "$id.ini", 'logo' => $logo]));
+    }
+    $ecrire($l, 'logo', $logo);
+    $tr = [];
+    foreach ($autres as $lg) {
+        $tr[$lg] = $trad($g['trad'] ?? [], $lg, 'logo_texte');
+    }
+    $ecrire($l, 'logo_texte', ins_modele_texte($g['logo_texte'] ?? ''), $tr);
     $fichier = ins_modele_texte($g['fichier'] ?? '');
     if ($fichier !== '' && $fichier !== $id) {
         $ecrire($l, 'fichier', $fichier);
@@ -2375,7 +2530,7 @@ function ins_apercu_document(array $form, string $langue, string $choisi = ''): 
         . '.bandeau{font-size:.8rem;color:#57606a;border-bottom:1px dashed #c9d2dc;padding:.2rem 0;margin-bottom:.5rem}</style></head><body><main>';
     $h .= '<div class="bandeau" lang="' . e($avant) . '">' . e($bandeau) . '</div>';
     $h .= ins_liens_langues($f['langues'], $lg);
-    $h .= '<h1>' . e($f['titre']) . '</h1>';
+    $h .= ins_tete($f['titre'], $f);
     if ($noteAcces !== '') {
         $h .= '<p class="petit" lang="' . e($avant) . '">' . e($noteAcces) . '</p>';
     }
@@ -2472,6 +2627,11 @@ textarea{min-height:6rem;resize:vertical}
 .echelle .notes{display:flex;flex-wrap:wrap;gap:.2rem}
 .echelle .opt{flex-direction:column;align-items:center;gap:0;margin:0;min-width:2.4rem}
 .echelle .bouts{display:flex;justify-content:space-between;gap:1rem;font-size:.88rem;color:#57606a;margin-top:.2rem}
+.vignettes{display:flex;flex-wrap:wrap;gap:1rem;margin:.5rem 0}.vignettes figure{margin:0;width:13rem}
+.vignettes img{max-width:100%;max-height:6rem;background:#fff;border:1px solid #ddd;padding:.3rem}
+.tete{display:flex;align-items:center;gap:1rem;margin:.5rem 0 1rem}
+.tete img{max-height:80px;max-width:35%;height:auto;width:auto;flex:none}
+.tete h1{margin:0}
 .lien{display:flex;gap:.4rem;align-items:center;margin:.4rem 0}
 table.cmd{font-size:.95rem}
 table.cmd td,table.cmd th{border-left:0;border-right:0}
@@ -2495,6 +2655,6 @@ td code{white-space:nowrap}
 td.actions form{display:block;margin:.15rem 0}
 td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
-@media (max-width:30rem){table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
+@media (max-width:30rem){.tete{gap:.6rem}.tete img{max-height:56px}table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
 CSS;
 }

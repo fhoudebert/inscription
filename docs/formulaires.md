@@ -6,7 +6,7 @@ Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) �
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
 [Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
-[Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
+[Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
 
 ## Principe
@@ -44,6 +44,8 @@ Réglages de la section `[formulaire]` :
 | `intro`     | texte d'introduction | — |
 | `merci`     | message affiché après l'envoi | « Merci, votre réponse est enregistrée. » |
 | `bouton`    | texte du bouton d'envoi | « Envoyer » |
+| `logo`      | image affichée à gauche du titre : nom d'un fichier de `prive/images/` (voir [Logo](#logo)) ; `non` = aucun logo | le logo du site (`config.php`), s'il y en a un |
+| `logo_texte` | texte de remplacement du logo, lu par les lecteurs d'écran (traduisible : `logo_texte_en`) | — |
 | `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) ; deux formulaires ne peuvent pas avoir le même (pensez-y en copiant un `.ini`) | le nom du formulaire |
 | `ouverture` | date/heure d'ouverture : `"2026-11-15"` ou `"2026-11-15 09:00"` | — |
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
@@ -278,6 +280,28 @@ obligatoire = oui
   (pesée, produit manquant, remise) se fixe dans l'administration.
 
 Exemple complet : `prive/formulaires/panier.ini` et le catalogue fictif `prive/catalogues/legumes.csv`.
+
+## Logo
+
+Une image (logo de l'association, de l'entreprise…) peut s'afficher **à gauche du titre** du formulaire, et aussi sur la page
+de remerciement et la page de connexion des accès restreints :
+
+```ini
+[formulaire]
+titre      = "Panier de la semaine"
+logo       = "exemple-panier.png"
+logo_texte = "Les jardins de l'exemple"
+```
+
+- l'image se range dans `prive/images/` : rubrique **Images** de `admin.php`, bouton d'envoi de l'éditeur, ou FTP
+  (voir [Images](administration.md#images)) ; elle est servie par `index.php`, la zone privée reste fermée ;
+- formats acceptés : **PNG, JPEG, GIF, WebP**, 1 Mo et 4000 × 4000 pixels au plus. Le **SVG est refusé** (il peut contenir du script) ;
+- affichée sur 80 pixels de haut au plus (56 sur téléphone) : prévoir une image d'environ 160 pixels de haut pour un rendu net ;
+- sans clé `logo`, c'est le **logo du site** qui s'affiche (clé `logo` de `config.php`, aussi sur la liste des formulaires) ;
+  `logo = non` le retire pour ce formulaire ;
+- `logo_texte` décrit l'image pour les lecteurs d'écran ; laissez-le vide si le titre suffit ;
+- un nom d'image incorrect (chemin, extension inconnue) rend le formulaire invalide ; une image absente est simplement
+  omise, avec une alerte dans `admin.php`.
 
 ## Formulaire multilingue
 

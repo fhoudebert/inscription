@@ -432,11 +432,12 @@
     }
     if (S.langueEd) {
       props.appendChild(traduisible(g, 'titre', { libelle: T('edi_titre_form') }));
+      if (g.logo !== 'non' && (g.logo || D.logo_site)) props.appendChild(traduisible(g, 'logo_texte', { libelle: T('edi_logo_texte') }));
       textes();
       return;
     }
     // Sommaire : accès direct à chaque groupe de réglages (le panneau défile)
-    var groupes = [['acces', T('edi_acces_groupe')], ['textes', T('edi_textes')], ['periode', T('edi_periode')], ['langues', T('edi_langues')]];
+    var groupes = [['acces', T('edi_acces_groupe')], ['logo', T('edi_logo_groupe')], ['textes', T('edi_textes')], ['periode', T('edi_periode')], ['langues', T('edi_langues')]];
     props.appendChild(el('p', { classe: 'edi-sommaire' }, groupes.map(function (x, n) {
       return [n ? ' · ' : '', el('a', { href: '#', texte: x[1], onclick: function (ev) {
         ev.preventDefault();
@@ -461,6 +462,9 @@
     }
     props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
+
+    titreGroupe('logo', T('edi_logo_groupe'));
+    reglageLogo(g);
 
     titreGroupe('textes', T('edi_textes'));
     textes();
@@ -493,6 +497,34 @@
     var avance = el('details', { classe: 'edi-avance' }, el('summary', { texte: T('edi_avance') }),
       texte(g, 'fichier', { libelle: T('edi_fichier'), placeholder: S.id || 'nom', aide: T('edi_fichier_aide') }));
     props.appendChild(avance);
+  }
+
+  /** Logo à gauche du titre : logo du site, aucun, ou une image de prive/images/ (envoi possible d'ici). */
+  function reglageLogo(g) {
+    var site = D.logo_site ? T('edi_logo_site', { nom: D.logo_site }) : T('edi_logo_site_aucun');
+    var vals = [['', site], ['non', T('edi_logo_aucun')]].concat(D.images.map(function (n) { return [n, n]; }));
+    if (g.logo && g.logo !== 'non' && D.images.indexOf(g.logo) < 0) vals.push([g.logo, g.logo + ' ⚠']);
+    props.appendChild(choixListe(g, 'logo', vals, T('edi_logo'), dessinerProps));
+    var fichier = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', id: 'p-logo-envoi' });
+    var etat = el('div', { classe: 'msg' });
+    fichier.addEventListener('change', function () {
+      if (!fichier.files.length) return;
+      var fd = new FormData();
+      fd.append('action', 'editeur_image');
+      fd.append('image', fichier.files[0]);
+      etat.textContent = T('edi_logo_envoi');
+      envoyer(fd).then(function (r) {
+        if (!r.ok) { etat.textContent = r.erreur; return; }
+        D.images = r.images;
+        g.logo = r.nom;
+        marquerModifie(); dessinerProps(); planifierApercu(0);
+      }).catch(function () { etat.textContent = T('edi_err_reseau'); });
+    });
+    props.appendChild(ligne(T('edi_logo_ajouter'), fichier, T('edi_logo_aide'), 'p-logo-envoi'));
+    props.appendChild(etat);
+    if (g.logo !== 'non' && (g.logo || D.logo_site)) {
+      props.appendChild(traduisible(g, 'logo_texte', { libelle: T('edi_logo_texte'), aide: T('edi_logo_texte_aide') }));
+    }
   }
 
   function dessinerChamp(c) {
