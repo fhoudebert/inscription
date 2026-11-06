@@ -162,6 +162,9 @@ if ($form['acces'] !== '') {
             ins_erreur_page(200, t('acces_deja_repondu'));
         }
     }
+    // Nom, e-mail, téléphone donnés avec l'accès : champs pré-remplis et facultatifs pour cette personne
+    $connus = ins_champs_connus($form, $acces);
+    $form = ins_appliquer_acces($form, $connus);
 }
 
 $brut = [];
@@ -175,7 +178,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ' . $url . '&merci=1', true, 303);
         exit;
     }
-    [$valeurs, $erreurs, $brut] = ins_valider($form, $_POST);
+    $saisie = $_POST;
+    foreach ($connus ?? [] as $champ => $v) {
+        if (!isset($saisie[$champ]) || (is_string($saisie[$champ]) && trim($saisie[$champ]) === '')) {
+            $saisie[$champ] = $v; // laissé vide : la valeur connue grâce à l'accès
+        }
+    }
+    [$valeurs, $erreurs, $brut] = ins_valider($form, $saisie);
     $etat = ins_etat($form, $reponseExistante !== null);
     if ($etat !== '') {
         $alerte = $etat;
@@ -235,7 +244,7 @@ if ($etat !== '' && $_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 if ($acces !== null) {
-    $qui = $acces['nom'] !== '' ? $acces['nom'] . ' (' . $acces['identifiant'] . ')' : $acces['identifiant'];
+    $qui = ins_nom_acces($acces) !== '' ? ins_nom_acces($acces) . ' (' . $acces['identifiant'] . ')' : $acces['identifiant'];
     echo '<p class="petit">' . e(t('acces_connecte', ['qui' => $qui]));
     if ($form['acces'] === 'personnel') {
         echo ' · <a href="' . e($url . '&sortir=1') . '">' . e(t('acces_sortir')) . '</a>';
@@ -256,7 +265,8 @@ echo '<form method="post" action="' . e($url) . '" novalidate>';
 echo '<input type="hidden" name="_jeton" value="' . e(ins_jeton($fid)) . '">';
 echo '<div class="pot" aria-hidden="true"><label>' . e(t('pot_de_miel')) . ' <input type="text" name="site_web" tabindex="-1" autocomplete="off"></label></div>';
 
-echo ins_rendu_champs($form, $brut, $erreurs, !$_POST, $reponseExistante);
+// Premier affichage : réponse précédente, sinon valeurs connues grâce à l'accès
+echo ins_rendu_champs($form, $brut, $erreurs, !$_POST, $reponseExistante ?? (!empty($connus) ? $connus : null));
 
 echo '<p class="petit"><span class="req">*</span> ' . e(t('champ_obligatoire')) . '</p>';
 echo '<p><button type="submit">' . e($form['bouton'] !== '' ? $form['bouton'] : t('bouton_defaut')) . '</button></p></form>';

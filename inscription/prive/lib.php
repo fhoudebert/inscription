@@ -16,7 +16,7 @@ const INS_COLONNES_FIXES = ['numero', 'date'];
 // Noms interdits pour les champs (colonnes ajoutées automatiquement)
 const INS_NOMS_RESERVES = ['numero', 'date', 'langue', 'acces', 'acces_nom'];
 // Colonnes du fichier des accès personnels (prive/donnees/acces/<fichier>.csv)
-const INS_COLONNES_ACCES = ['identifiant', 'nom', 'type', 'secret', 'etat', 'cree', 'repondu', 'modifie', 'echecs', 'bloque'];
+const INS_COLONNES_ACCES = ['identifiant', 'nom', 'type', 'secret', 'etat', 'cree', 'repondu', 'modifie', 'echecs', 'bloque', 'email', 'telephone'];
 const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage temporaire
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
@@ -1130,7 +1130,7 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = '', ?arra
             } elseif ($nom === 'acces') {
                 $ligne[] = $acces['identifiant'] ?? '';
             } elseif ($nom === 'acces_nom') {
-                $ligne[] = ins_csv_sur($acces['nom'] ?? '');
+                $ligne[] = ins_csv_sur($acces !== null ? ins_nom_acces($acces) : '');
             } else {
                 $ligne[] = ins_csv_sur((string)($valeurs[$nom] ?? ''));
             }
@@ -1232,6 +1232,8 @@ function ins_lire_acces(array $form): array
         }
         if ($a['identifiant'] !== '') {
             $a['nom'] = ins_csv_brut($a['nom']);
+            $a['email'] = ins_csv_brut($a['email']);
+            $a['telephone'] = ins_csv_brut($a['telephone']);
             $res[$a['identifiant']] = $a;
         }
     }
@@ -1245,7 +1247,7 @@ function ins_ecrire_acces(array $form, array $acces): void
     foreach ($acces as $a) {
         $l = [];
         foreach (INS_COLONNES_ACCES as $nom) {
-            $l[] = $nom === 'nom' ? ins_csv_sur((string)$a[$nom]) : (string)$a[$nom];
+            $l[] = in_array($nom, ['nom', 'email', 'telephone'], true) ? ins_csv_sur((string)($a[$nom] ?? '')) : (string)($a[$nom] ?? '');
         }
         $lignes[] = $l;
     }
@@ -1277,6 +1279,78 @@ function ins_nouveau_secret(string $type): array
  * Crée des accès pour une liste de noms (un accès par nom ; noms vides = accès anonymes).
  * @return array<int,array{identifiant:string,nom:string,secret:string}> secrets EN CLAIR, à communiquer une seule fois
  */
+/**
+ * Une ligne de la liste d'accès : nom et contact, dans n'importe quel ordre et avec n'importe quel séparateur.
+ *   « Marie Durand ; marie@exemple.fr », « Jean Martin 06 12 34 56 78 », « paul@exemple.fr »
+ * @return array{nom: string, email: string, telephone: string}
+ */
+function ins_analyser_ligne_acces(string $ligne): array
+{
+    $l = ' ' . trim($ligne) . ' ';
+    $email = '';
+    if (preg_match('/[^\s;,<>"()]+@[^\s;,<>"()]+\.[a-z]{2,}/iu', $l, $m) && filter_var($m[0], FILTER_VALIDATE_EMAIL)) {
+        $email = $m[0];
+        $l = str_replace($m[0], ' ', $l);
+    }
+    $tel = '';
+    if (preg_match('/\+?\(?\d[\d .\-\/()]{6,}\d/', $l, $m)) {
+        $tel = trim($m[0]);
+        $l = str_replace($m[0], ' ', $l);
+    }
+    $nom = trim((string)preg_replace('/[\s;,\t<>|]+/u', ' ', $l), " -:");
+    return ['nom' => mb_substr($nom, 0, 200), 'email' => mb_substr($email, 0, 200), 'telephone' => mb_substr($tel, 0, 40)];
+}
+
+/** Nom affiché d'un accès : son nom, sinon son contact. */
+function ins_nom_acces(array $a): string
+{
+    foreach (['nom', 'email', 'telephone'] as $k) {
+        if (($a[$k] ?? '') !== '') {
+            return (string)$a[$k];
+        }
+    }
+    return '';
+}
+
+/**
+ * Champs du formulaire déjà connus grâce à l'accès : le nom va dans le champ « nom » (sinon le premier texte court),
+ * l'e-mail dans le premier champ e-mail, le téléphone dans le premier champ téléphone.
+ * @return array<string,string> nom du champ => valeur
+ */
+function ins_champs_connus(array $form, array $acces): array
+{
+    $cibles = ['nom' => null, 'email' => null, 'telephone' => null];
+    if (($form['champs']['nom']['type'] ?? '') === 'texte') {
+        $cibles['nom'] = 'nom';
+    }
+    foreach ($form['champs'] as $c) {
+        if ($c['type'] === 'texte' && $cibles['nom'] === null) {
+            $cibles['nom'] = $c['nom'];
+        } elseif ($c['type'] === 'email' && $cibles['email'] === null) {
+            $cibles['email'] = $c['nom'];
+        } elseif ($c['type'] === 'telephone' && $cibles['telephone'] === null) {
+            $cibles['telephone'] = $c['nom'];
+        }
+    }
+    $res = [];
+    foreach ($cibles as $info => $champ) {
+        if ($champ !== null && trim((string)($acces[$info] ?? '')) !== '' && empty($form['champs'][$champ]['si'])) {
+            $res[$champ] = trim((string)$acces[$info]);
+        }
+    }
+    return $res;
+}
+
+/** Les champs connus grâce à l'accès ne sont plus obligatoires (et sont pré-remplis). */
+function ins_appliquer_acces(array $form, array $connus): array
+{
+    foreach ($connus as $champ => $v) {
+        $form['champs'][$champ]['obligatoire'] = false;
+        $form['champs'][$champ]['aide'] = trim($form['champs'][$champ]['aide'] . "\n" . t('acces_champ_connu'));
+    }
+    return $form;
+}
+
 function ins_creer_acces(array $form, array $noms): array
 {
     $type = $form['acces'] === 'lien' ? 'lien' : 'mdp';
@@ -1284,14 +1358,16 @@ function ins_creer_acces(array $form, array $noms): array
     try {
         $tous = ins_lire_acces($form);
         $crees = [];
-        foreach ($noms as $nom) {
+        foreach ($noms as $ligne) {
+            $info = ins_analyser_ligne_acces((string)$ligne);
             do {
                 $id = ins_nouveau_numero();
             } while (isset($tous[$id]));
             [$clair, $empreinte] = ins_nouveau_secret($type);
-            $tous[$id] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'type' => $type, 'secret' => $empreinte,
-                'etat' => 'actif', 'cree' => date('Y-m-d H:i:s'), 'repondu' => '', 'modifie' => '', 'echecs' => '0', 'bloque' => ''];
-            $crees[] = ['identifiant' => $id, 'nom' => trim((string)$nom), 'secret' => $clair];
+            $tous[$id] = ['identifiant' => $id, 'nom' => $info['nom'], 'type' => $type, 'secret' => $empreinte,
+                'etat' => 'actif', 'cree' => date('Y-m-d H:i:s'), 'repondu' => '', 'modifie' => '', 'echecs' => '0', 'bloque' => '',
+                'email' => $info['email'], 'telephone' => $info['telephone']];
+            $crees[] = ['identifiant' => $id, 'nom' => $info['nom'], 'email' => $info['email'], 'telephone' => $info['telephone'], 'secret' => $clair];
         }
         ins_ecrire_acces($form, $tous);
         return $crees;
@@ -1916,8 +1992,8 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             $h .= ins_rendu_commande($c, $q, $erreurs[$nom] ?? '', $si);
             continue;
         }
-        if ($premier && $reponseExistante !== null) {
-            $b = $reponseExistante[$nom] ?? null; // modification : réponse précédente
+        if ($premier && $reponseExistante !== null && array_key_exists($nom, $reponseExistante)) {
+            $b = $reponseExistante[$nom]; // réponse précédente, ou valeur connue grâce à l'accès
         } else {
             $b = $premier ? ($c['defaut'] !== '' ? $c['defaut'] : null) : ($brut[$nom] ?? null);
         }

@@ -212,12 +212,16 @@ Fonctionnement :
 - **une seule réponse par accès**. Avec `modifiable = oui`, la personne qui revient avec son lien (et son mot de passe)
   retrouve sa réponse pré-remplie et peut la modifier jusqu'à la fermeture : la réponse est **remplacée**, pas ajoutée ;
   avec `modifiable = non`, elle voit « Vous avez déjà répondu » ;
-- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès) :
+- le fichier des réponses contient deux colonnes de plus, `acces` (identifiant) et `acces_nom` (nom donné à l'accès, à défaut son e-mail ou son téléphone) :
   on sait qui a répondu quoi ;
 - un formulaire à accès restreint n'apparaît **jamais** dans la liste publique, et sans lien valide l'adresse répond « Page introuvable » ;
 - `places` limite le nombre de personnes qui répondent ; une modification ne compte pas comme une nouvelle réponse ;
 - en mode `personnel`, la connexion dure 2 heures (lien « se déconnecter » sur la page) ; après 10 mots de passe faux,
-  l'accès est bloqué 15 minutes.
+  l'accès est bloqué 15 minutes ;
+- **champs déjà connus** : si l'accès a été créé avec un nom, un e-mail ou un téléphone (« Marie Durand ; marie@exemple.fr »),
+  ces informations pré-remplissent le champ `nom` (à défaut le premier texte court), le premier champ `email` et le premier
+  champ `telephone` du formulaire. Pour cette personne, ces champs ne sont **plus obligatoires** : laissés vides, ils
+  prennent la valeur connue ; elle peut aussi les corriger. Un champ affiché sous condition (`si`) n'est jamais pré-rempli.
 
 Exemple complet : `prive/formulaires/ag-membres.ini`.
 
@@ -265,8 +269,11 @@ obligatoire = oui
 - **Le message** (`message`) est le texte proposé au vendeur pour prévenir le client, à copier dans un SMS ou un e-mail.
   Repères : `{numero}`, `{date}`, `{detail}` (une ligne par produit), `{total}`, `{note}` (note saisie à la préparation)
   et `{nom_du_champ}` pour toute réponse du formulaire (`{nom}`, `{telephone}`, `{retrait}`…). Sans `message`, un texte par défaut est utilisé.
-- Avec un **accès restreint** (`acces = lien` ou `personnel`) et `modifiable = oui`, le client retrouve sa commande
-  pré-remplie et peut la modifier ; si elle était déjà préparée, la fiche de préparation le signale.
+- **Accès réservé aux clients (facultatif)** : avec `acces = lien` (ou `personnel`), chaque client reçoit un lien personnel ;
+  ses nom, téléphone et e-mail, donnés à la création des accès, sont déjà remplis et ne sont plus obligatoires.
+  Avec `modifiable = oui` (défaut), il retrouve sa commande pré-remplie et peut la modifier ; si elle était déjà préparée,
+  la fiche de préparation le signale. Sans `acces`, le formulaire reste ouvert à tous (`panier.ini` contient la ligne
+  `; acces = lien` à décommenter).
 - Un formulaire ne peut contenir qu'**un** champ `commande`. Le montant affiché est indicatif : le prix définitif
   (pesée, produit manquant, remise) se fixe dans l'administration.
 

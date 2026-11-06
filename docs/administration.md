@@ -160,13 +160,16 @@ Avec `'admin_gestion' => false`, `admin.php` ne sert plus qu'à consulter et té
 Pour un formulaire déclaré `acces = personnel` ou `acces = lien` (voir [Accès restreint](formulaires.md#accès-restreint)),
 la fiche du formulaire dans `admin.php` affiche le nombre d'accès et de réponses, et une rubrique **Gérer les accès** :
 
-1. **Créer** : coller une liste de noms ou d'adresses (un par ligne), ou indiquer un nombre d'accès sans nom (500 au plus à la fois),
-   puis **Créer les accès**.
+1. **Créer** : coller la liste des personnes, une par ligne, avec leur nom et/ou leur e-mail et/ou leur téléphone, dans
+   n'importe quel ordre et avec n'importe quel séparateur (« Marie Durand ; marie@exemple.fr », « Jean Martin 06 12 34 56 78 »,
+   « paul@exemple.fr ») — une colonne copiée d'un tableur convient. Ou indiquer un nombre d'accès sans nom (500 au plus
+   à la fois), puis **Créer les accès**. Le nom, l'e-mail et le téléphone pré-rempliront les champs correspondants du
+   formulaire (voir [Accès restreint](formulaires.md#accès-restreint)).
 2. **Distribuer** : la page affiche alors, **une seule fois**, chaque identifiant avec son mot de passe et son lien personnel,
-   et un bouton **Télécharger la liste (CSV)** (`identifiant;nom;mot_de_passe;lien`, ou `identifiant;nom;lien` en mode `lien`).
+   et un bouton **Télécharger la liste (CSV)** (`identifiant;nom;email;telephone;mot_de_passe;lien`, sans `mot_de_passe` en mode `lien`).
    Ce fichier sert au publipostage (LibreOffice, Thunderbird…) ou à l'impression. Les mots de passe et les jetons des liens
    ne sont conservés que sous forme d'empreinte : ils ne pourront plus être affichés.
-3. **Suivre** : le tableau des accès indique pour chacun son nom, son état (actif, révoqué, bloqué après trop d'essais)
+3. **Suivre** : le tableau des accès indique pour chacun son nom et son contact, son état (actif, révoqué, bloqué après trop d'essais)
    et la date de sa réponse et de sa dernière modification.
 4. **Agir** sur un accès :
    - **Révoquer** : l'accès ne permet plus d'ouvrir le formulaire (sa réponse éventuelle est conservée) ; **Réactiver** l'annule
@@ -174,7 +177,7 @@ la fiche du formulaire dans `admin.php` affiche le nombre d'accès et de répons
    - **Nouveau mot de passe** / **Nouveau lien** : en cas de perte ou de fuite ; l'ancien cesse aussitôt de fonctionner
      et le nouveau s'affiche une fois, comme à la création.
 
-Les accès sont enregistrés dans `prive/donnees/acces/<fichier>.csv` (identifiant, nom, empreinte, état, dates, essais manqués),
+Les accès sont enregistrés dans `prive/donnees/acces/<fichier>.csv` (identifiant, nom, e-mail, téléphone, empreinte, état, dates, essais manqués),
 dans la zone privée. Ils restent en place si le formulaire est remplacé ; ils sont liés au nom du fichier de réponses
 (clé `fichier`). Ces actions demandent `'admin_gestion' => true`.
 

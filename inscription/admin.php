@@ -515,15 +515,23 @@ function ins_csv_nouveaux_acces(array $form, array $liste): string
     $h = fopen('php://temp', 'w+b');
     fwrite($h, "\xEF\xBB\xBF");
     $lien = $form['acces'] === 'lien';
-    fputcsv($h, $lien ? ['identifiant', 'nom', 'lien'] : ['identifiant', 'nom', 'mot_de_passe', 'lien'], $sep, '"', '');
+    fputcsv($h, $lien ? ['identifiant', 'nom', 'email', 'telephone', 'lien'] : ['identifiant', 'nom', 'email', 'telephone', 'mot_de_passe', 'lien'], $sep, '"', '');
     foreach ($liste as $a) {
         $url = ins_lien_acces($form, $a['identifiant'], $a['secret']);
-        fputcsv($h, $lien ? [$a['identifiant'], ins_csv_sur($a['nom']), $url] : [$a['identifiant'], ins_csv_sur($a['nom']), $a['secret'], $url], $sep, '"', '');
+        $debut = [$a['identifiant'], ins_csv_sur($a['nom']), ins_csv_sur($a['email'] ?? ''), ins_csv_sur($a['telephone'] ?? '')];
+        fputcsv($h, $lien ? array_merge($debut, [$url]) : array_merge($debut, [$a['secret'], $url]), $sep, '"', '');
     }
     rewind($h);
     $csv = (string)stream_get_contents($h);
     fclose($h);
     return 'data:text/csv;charset=utf-8;base64,' . base64_encode($csv);
+}
+
+/** E-mail et téléphone d'un accès, sous son nom. */
+function ins_contact_html(array $a): string
+{
+    $c = array_filter([(string)($a['email'] ?? ''), (string)($a['telephone'] ?? '')], 'strlen');
+    return $c ? ($a['nom'] !== '' ? '<br>' : '') . '<span class="petit">' . e(implode(' · ', $c)) . '</span>' : '';
 }
 
 /** Petit bouton POST d'action sur un accès. */
@@ -592,7 +600,7 @@ function ins_rubrique_acces(array $form, bool $gestion, string $jeton, bool $ouv
             }
             $rep = $a['repondu'] === '' ? '—' : t('adm_acces_repondu', ['date' => ins_date_lisible((int)strtotime($a['repondu']))])
                 . ($a['modifie'] !== '' ? ' · ' . t('adm_acces_modifie', ['date' => ins_date_lisible((int)strtotime($a['modifie']))]) : '');
-            $h .= '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td><td>' . e($etat) . '</td><td>' . e($rep) . '</td>';
+            $h .= '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . ins_contact_html($a) . '</td><td>' . e($etat) . '</td><td>' . e($rep) . '</td>';
             if ($gestion) {
                 $bloque = $a['bloque'] !== '' && (int)$a['bloque'] > time();
                 $h .= '<td class="actions">'
@@ -612,7 +620,8 @@ function ins_rubrique_acces(array $form, bool $gestion, string $jeton, bool $ouv
             . '<input type="hidden" name="action" value="acces_generer">'
             . '<input type="hidden" name="id" value="' . e($form['id']) . '">'
             . '<label class="lib" for="noms_' . e($form['id']) . '">' . e(t('adm_acces_noms')) . '</label>'
-            . '<textarea id="noms_' . e($form['id']) . '" name="noms" placeholder="' . e(t('adm_acces_noms_exemple')) . '"></textarea>'
+            . '<textarea id="noms_' . e($form['id']) . '" name="noms" rows="4" placeholder="' . e(t('adm_acces_noms_exemple')) . '"></textarea>'
+            . '<p class="petit">' . e(t('adm_acces_noms_aide')) . '</p>'
             . '<label class="lib" for="nb_' . e($form['id']) . '" style="margin-top:.6rem">' . e(t('adm_acces_ou_nombre')) . '</label>'
             . '<input type="number" id="nb_' . e($form['id']) . '" name="nombre" min="1" max="500" style="max-width:8rem">'
             . '<p class="petit">' . e(t($form['acces'] === 'lien' ? 'adm_acces_aide_lien' : 'adm_acces_aide')) . '</p>'
@@ -645,7 +654,7 @@ if ($nouveauxAcces !== null) {
         . '<div class="defile" style="max-height:20rem"><table><thead><tr><th>' . e(t('acces_identifiant')) . '</th><th>' . e(t('adm_acces_nom')) . '</th>'
         . ($modeLien ? '' : '<th>' . e(t('acces_mot_de_passe')) . '</th>') . '<th>' . e(t('adm_acces_lien')) . '</th></tr></thead><tbody>';
     foreach ($nouveauxAcces['liste'] as $a) {
-        echo '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . '</td>'
+        echo '<tr><td><code>' . e($a['identifiant']) . '</code></td><td>' . e($a['nom']) . ins_contact_html($a) . '</td>'
             . ($modeLien ? '' : '<td><code>' . e($a['secret']) . '</code></td>')
             . '<td style="word-break:break-all">' . e(ins_lien_acces($fa, $a['identifiant'], $a['secret'])) . '</td></tr>';
     }
