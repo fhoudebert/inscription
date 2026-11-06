@@ -320,6 +320,15 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
     if ($contenu === false) {
         throw new RuntimeException(t('err_formulaire_absent', ['id' => $id]));
     }
+    return ins_analyser_formulaire($id, $contenu);
+}
+
+/** Analyse et vérifie le texte d'un descripteur (sans fichier : sert aussi à l'éditeur). */
+function ins_analyser_formulaire(string $id, string $contenu): array
+{
+    if (!ins_id_valide($id)) {
+        throw new InvalidArgumentException(t('err_id_formulaire', ['id' => $id]));
+    }
     $f = "$id.ini";
     $contenu = preg_replace('/^\xEF\xBB\xBF/', '', $contenu) ?? '';
     if (!mb_check_encoding($contenu, 'UTF-8')) {
@@ -376,6 +385,8 @@ function ins_charger_formulaire(string $id, ?string $chemin = null): array
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
+        'ouverture_texte' => trim((string)$lit('ouverture')),   // tel qu'écrit (pour l'éditeur)
+        'fermeture_texte' => trim((string)$lit('fermeture')),
         'places'          => max(0, (int)$lit('places', 0)),
         'notifier'        => trim((string)$lit('notifier')),
         // diffusion = oui par défaut ; l'ancienne clé « cache = oui » vaut diffusion = non
@@ -1399,6 +1410,448 @@ function ins_verifier_jeton(string $fid, $jeton): string
         return 'expire';
     }
     return '';
+}
+
+/* ------------------------------------------------------------------ */
+/* Affichage d'un formulaire (page publique et aperçu de l'éditeur)   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * HTML des champs d'un formulaire (déjà localisé par ins_localiser).
+ * $premier : premier affichage (valeurs par défaut, ou réponse précédente $reponseExistante) ;
+ * sinon $brut et $erreurs viennent de l'envoi refusé.
+ */
+function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premier, ?array $reponseExistante = null): string
+{
+    $h = '';
+    foreach ($form['champs'] as $nom => $c) {
+        $si = $c['si'] ? ' data-si="' . e(json_encode($c['si'], JSON_UNESCAPED_UNICODE)) . '"' : '';
+
+        if ($c['type'] === 'titre') {
+            $h .= '<h2 data-bloc="' . e($nom) . '"' . $si . '>' . e($c['libelle']) . '</h2>';
+            continue;
+        }
+        if ($c['type'] === 'info') {
+            $h .= '<div class="info" data-bloc="' . e($nom) . '"' . $si . '>' . nl2br(e($c['libelle'])) . '</div>';
+            continue;
+        }
+
+        if ($premier && $reponseExistante !== null) {
+            $b = $reponseExistante[$nom] ?? null; // modification : réponse précédente
+        } else {
+            $b = $premier ? ($c['defaut'] !== '' ? $c['defaut'] : null) : ($brut[$nom] ?? null);
+        }
+        $err = $erreurs[$nom] ?? '';
+        $idh = 'c_' . $nom;
+        $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
+        $aria = $err !== '' ? ' aria-invalid="true" aria-describedby="' . $idh . '_e"' : '';
+        $groupe = in_array($c['type'], ['choix', 'cases', 'echelle'], true);
+
+        $h .= '<div class="champ' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="' . e($c['type']) . '"' . $si . '>';
+        if ($c['type'] !== 'case') {
+            $h .= $groupe
+                ? '<fieldset style="border:0;margin:0;padding:0"><legend class="lib">' . e($c['libelle']) . $req . '</legend>'
+                : '<label class="lib" for="' . $idh . '">' . e($c['libelle']) . $req . '</label>';
+        }
+        if ($c['aide'] !== '') {
+            $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+        }
+
+        $ph = $c['exemple'] !== '' ? ' placeholder="' . e($c['exemple']) . '"' : '';
+        $val = is_string($b) ? $b : '';
+        switch ($c['type']) {
+            case 'texte_long':
+                $h .= '<textarea id="' . $idh . '" name="' . e($nom) . '"' . $ph . $aria . '>' . e($val) . '</textarea>';
+                break;
+            case 'choix':
+                foreach ($c['options'] as $i => $opt) {
+                    $ch = $val === $opt ? ' checked' : '';
+                    $h .= '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '> <span>' . e($c['options_aff'][$i]) . '</span></label>';
+                }
+                break;
+            case 'echelle':
+                $h .= '<div class="echelle"><div class="notes">';
+                foreach ($c['options'] as $i => $opt) {
+                    $ch = $val === $opt ? ' checked' : '';
+                    $h .= '<label class="opt"><input type="radio" name="' . e($nom) . '" value="' . e($opt) . '"' . $ch . '><span>' . e($c['options_aff'][$i]) . '</span></label>';
+                }
+                $h .= '</div>';
+                if ($c['gauche'] !== '' || $c['droite'] !== '') {
+                    $h .= '<div class="bouts"><span>' . e($c['gauche']) . '</span><span>' . e($c['droite']) . '</span></div>';
+                }
+                $h .= '</div>';
+                break;
+            case 'liste':
+                $h .= '<select id="' . $idh . '" name="' . e($nom) . '"' . $aria . '><option value="">' . e(t('choisir')) . '</option>';
+                foreach ($c['options'] as $i => $opt) {
+                    $h .= '<option value="' . e($opt) . '"' . ($val === $opt ? ' selected' : '') . '>' . e($c['options_aff'][$i]) . '</option>';
+                }
+                $h .= '</select>';
+                break;
+            case 'cases':
+                $sel = is_array($b) ? $b : (is_string($b) && $b !== '' ? array_map('trim', explode('|', $b)) : []);
+                foreach ($c['options'] as $i => $opt) {
+                    $ch = in_array($opt, $sel, true) ? ' checked' : '';
+                    $h .= '<label class="opt"><input type="checkbox" name="' . e($nom) . '[]" value="' . e($opt) . '"' . $ch . '> <span>' . e($c['options_aff'][$i]) . '</span></label>';
+                }
+                break;
+            case 'case':
+                $ch = ($premier ? ins_oui($val) : ($b !== null && $b !== '')) ? ' checked' : '';
+                $h .= '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="1"' . $ch . $aria . '> <span>' . e($c['libelle']) . $req . '</span></label>';
+                break;
+            default:
+                $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'date' => 'date'];
+                $tp = $types[$c['type']] ?? 'text';
+                $extra = $c['type'] === 'nombre' ? ' inputmode="decimal"' : '';
+                if ($c['type'] === 'date') {
+                    $extra .= ($c['min'] !== null ? ' min="' . e($c['min']) . '"' : '') . ($c['max'] !== null ? ' max="' . e($c['max']) . '"' : '');
+                }
+                $auto = ['email' => ' autocomplete="email"', 'telephone' => ' autocomplete="tel"'][$c['type']] ?? '';
+                $h .= '<input type="' . $tp . '" id="' . $idh . '" name="' . e($nom) . '" value="' . e($val) . '"' . $ph . $extra . $auto . $aria . '>';
+        }
+        if ($groupe) {
+            $h .= '</fieldset>';
+        }
+        if ($err !== '') {
+            $h .= '<div class="msg" id="' . $idh . '_e">' . e($err) . '</div>';
+        }
+        $h .= '</div>';
+    }
+    return $h;
+}
+
+/** Script de l'affichage conditionnel (« si = »). */
+function ins_script_conditions(): string
+{
+    return <<<'JS'
+<script>
+/* Affichage conditionnel (« si = » dans le descripteur). Sans JavaScript, tout reste visible
+   et le serveur applique les mêmes règles. */
+(function () {
+  var form = document.querySelector('form');
+  if (!form) return;
+  var blocs = form.querySelectorAll('[data-si]');
+  if (!blocs.length) return;
+  function valeurs(nom) {
+    var bloc = form.querySelector('.champ[data-nom="' + nom + '"]');
+    if (!bloc || bloc.classList.contains('cache')) return null;
+    var type = bloc.getAttribute('data-type'), res = [];
+    bloc.querySelectorAll('input,select,textarea').forEach(function (el) {
+      if (type === 'case') res.push(el.checked ? '1' : '0');
+      else if (el.type === 'radio' || el.type === 'checkbox') { if (el.checked) res.push(el.value); }
+      else if (el.value !== '') res.push(el.value);
+    });
+    return res.map(function (v) { return v.trim().toLowerCase(); });
+  }
+  function maj() {
+    blocs.forEach(function (bloc) {
+      var conds = JSON.parse(bloc.getAttribute('data-si')), vis = true;
+      conds.forEach(function (c) {
+        var v = valeurs(c.champ);
+        if (v === null) { vis = false; return; }
+        var trouve = c.valeurs.some(function (x) { return v.indexOf(x.toLowerCase()) >= 0; });
+        if (trouve !== c.egal) vis = false;
+      });
+      bloc.classList.toggle('cache', !vis);
+      bloc.querySelectorAll('input,select,textarea').forEach(function (el) { el.disabled = !vis; });
+    });
+  }
+  form.addEventListener('change', maj);
+  maj(); maj(); // deux passes pour les dépendances en chaîne
+})();
+</script>
+JS;
+}
+
+/* ------------------------------------------------------------------ */
+/* Éditeur : formulaire ⇄ modèle ⇄ texte .ini                         */
+/* ------------------------------------------------------------------ */
+
+// Propriétés de champ utiles selon le type (les autres sont ignorées à l'écriture)
+const INS_PROPRIETES_TYPE = [
+    'texte'      => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max', 'unique'],
+    'texte_long' => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max'],
+    'email'      => ['aide', 'obligatoire', 'defaut', 'exemple', 'unique'],
+    'telephone'  => ['aide', 'obligatoire', 'defaut', 'exemple', 'unique'],
+    'nombre'     => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max', 'unique'],
+    'date'       => ['aide', 'obligatoire', 'defaut', 'min', 'max'],
+    'choix'      => ['aide', 'obligatoire', 'defaut', 'options'],
+    'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
+    'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
+    'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
+    'case'       => ['aide', 'obligatoire', 'defaut'],
+    'titre'      => [],
+    'info'       => [],
+];
+
+/** Modèle éditable (tableaux simples, prêt pour JSON) d'un formulaire analysé. */
+function ins_modele(array $form): array
+{
+    $g = [];
+    foreach (['titre', 'intro', 'merci', 'bouton', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+        $g[$k] = (string)$form[$k];
+    }
+    // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
+    $g['fichier'] = $form['fichier'] === $form['id'] ? '' : $form['fichier'];
+    $g['ouverture'] = $form['ouverture_texte'];
+    $g['fermeture'] = $form['fermeture_texte'];
+    $g['places'] = (int)$form['places'];
+    $g['diffusion'] = $form['acces'] !== '' ? true : (bool)$form['diffusion'];
+    $g['afficher_numero'] = (bool)$form['afficher_numero'];
+    $g['modifiable'] = $form['acces'] !== '' ? (bool)$form['modifiable'] : true;
+    $g['langues'] = array_values($form['langues']);
+    $g['trad'] = (object)$form['trad'];
+    $champs = [];
+    foreach ($form['champs'] as $c) {
+        $champs[] = [
+            'nom' => $c['nom'], 'type' => $c['type'], 'libelle' => $c['libelle'], 'aide' => $c['aide'],
+            'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
+            'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
+            'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'],
+            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
+            'trad' => (object)$c['trad'],
+        ];
+    }
+    return ['formulaire' => $g, 'champs' => $champs];
+}
+
+/** Valeur entre guillemets pour le .ini (antislash et guillemet échappés). */
+function ins_ini_texte(string $v): string
+{
+    return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $v) . '"';
+}
+
+function ins_modele_texte($v): string
+{
+    return is_scalar($v) ? trim(str_replace("\r\n", "\n", (string)$v)) : '';
+}
+
+function ins_modele_liste($v): array
+{
+    if (is_string($v)) {
+        $v = preg_split('/\R|\|/', $v) ?: [];
+    }
+    return is_array($v) ? array_values(array_filter(array_map('ins_modele_texte', $v), 'strlen')) : [];
+}
+
+/** Écrit le texte .ini d'un modèle (venu de l'éditeur : chaque valeur est contrôlée). */
+function ins_modele_vers_ini(string $id, array $m): string
+{
+    $g = is_array($m['formulaire'] ?? null) ? $m['formulaire'] : [];
+    $champs = is_array($m['champs'] ?? null) ? array_values($m['champs']) : [];
+    $trad = function ($tab, string $lg, string $cle) {
+        $tab = is_object($tab) ? (array)$tab : (is_array($tab) ? $tab : []);
+        $t = $tab[$lg] ?? null;
+        $t = is_object($t) ? (array)$t : (is_array($t) ? $t : []);
+        return $t[$cle] ?? null;
+    };
+
+    $base = ins_minuscules(ins_modele_texte($g['langue'] ?? '')) ?: (string)ins_config()['langue'];
+    $langues = array_values(array_unique(array_merge([$base], array_map('ins_minuscules', ins_modele_liste($g['langues'] ?? [])))));
+    foreach ($langues as $lg) {
+        if (!preg_match('/^[a-z]{2,3}(-[a-z]{2,4})?$/', $lg)) {
+            throw new RuntimeException(t('err_langue', ['f' => "$id.ini", 'langue' => $lg]));
+        }
+    }
+    $autres = array_slice($langues, 1);
+    // Garde-fous : rien de ce qui vient du navigateur ne doit pouvoir créer une section ou une clé
+    foreach ($champs as $c) {
+        $nom = is_array($c) ? ins_modele_texte($c['nom'] ?? '') : '';
+        if (!preg_match('/^[a-z][a-z0-9_]{0,63}$/i', $nom) || in_array(strtolower($nom), INS_NOMS_RESERVES, true)) {
+            throw new RuntimeException(t('err_nom_champ', ['f' => "$id.ini", 'nom' => $nom]));
+        }
+        $type = ins_modele_texte($c['type'] ?? '');
+        if (!in_array($type, INS_TYPES, true)) {
+            throw new RuntimeException(t('err_type', ['f' => "$id.ini", 'nom' => $nom, 'type' => $type, 'types' => implode(', ', INS_TYPES)]));
+        }
+    }
+    if (!in_array(ins_modele_texte($g['acces'] ?? ''), ['', 'personnel', 'lien'], true)) {
+        throw new RuntimeException(t('err_acces_mode', ['f' => "$id.ini", 'valeur' => ins_modele_texte($g['acces'] ?? '')]));
+    }
+
+    $l = ['; ' . t('edi_ini_entete', ['date' => date('Y-m-d H:i')]), '', '[formulaire]'];
+    $ecrire = function (array &$l, string $cle, $val, array $trads = []) {
+        if (is_array($val)) {
+            $val = implode(' | ', $val);
+        }
+        if ($val !== '' && $val !== null) {
+            $l[] = $cle . ' = ' . ins_ini_texte((string)$val);
+        }
+        foreach ($trads as $lg => $tv) {
+            if (is_array($tv)) {
+                $tv = implode(' | ', ins_modele_liste($tv));
+            }
+            $tv = ins_modele_texte($tv);
+            if ($tv !== '') {
+                $l[] = $cle . '_' . $lg . ' = ' . ins_ini_texte($tv);
+            }
+        }
+    };
+    foreach (['titre', 'intro', 'merci', 'bouton'] as $k) {
+        $tr = [];
+        foreach ($autres as $lg) {
+            $tr[$lg] = $trad($g['trad'] ?? [], $lg, $k);
+        }
+        $ecrire($l, $k, ins_modele_texte($g[$k] ?? ''), $tr);
+    }
+    $fichier = ins_modele_texte($g['fichier'] ?? '');
+    if ($fichier !== '' && $fichier !== $id) {
+        $ecrire($l, 'fichier', $fichier);
+    }
+    foreach (['ouverture', 'fermeture'] as $k) {
+        $v = str_replace('T', ' ', ins_modele_texte($g[$k] ?? ''));
+        $ecrire($l, $k, preg_replace('/ 00:00$/', '', $v) ?? $v);
+    }
+    if ((int)($g['places'] ?? 0) > 0) {
+        $l[] = 'places = ' . (int)$g['places'];
+    }
+    $ecrire($l, 'notifier', ins_modele_texte($g['notifier'] ?? ''));
+    if (count($langues) > 1) {
+        $ecrire($l, 'langues', implode(' | ', $langues));
+    } elseif ($base !== (string)ins_config()['langue']) {
+        $ecrire($l, 'langue', $base);
+    }
+    $acces = ins_modele_texte($g['acces'] ?? '');
+    if ($acces !== '') {
+        $ecrire($l, 'acces', $acces);
+        if (empty($g['modifiable'])) {
+            $l[] = 'modifiable = non';
+        }
+    } elseif (array_key_exists('diffusion', $g) && empty($g['diffusion'])) {
+        $l[] = 'diffusion = non';
+    }
+    if (array_key_exists('afficher_numero', $g) && empty($g['afficher_numero'])) {
+        $l[] = 'afficher_numero = non';
+    }
+
+    $types = [];
+    foreach ($champs as $c) {
+        if (is_array($c)) {
+            $types[ins_modele_texte($c['nom'] ?? '')] = ins_modele_texte($c['type'] ?? '');
+        }
+    }
+    foreach ($champs as $c) {
+        if (!is_array($c)) {
+            continue;
+        }
+        $nom = ins_modele_texte($c['nom'] ?? '');
+        $type = ins_modele_texte($c['type'] ?? 'texte');
+        $props = INS_PROPRIETES_TYPE[$type] ?? INS_PROPRIETES_TYPE['texte'];
+        $l[] = '';
+        $l[] = '[' . $nom . ']';
+        $l[] = 'type = ' . $type;
+        $tr = function (string $k) use ($c, $autres, $trad) {
+            $r = [];
+            foreach ($autres as $lg) {
+                $r[$lg] = $trad($c['trad'] ?? [], $lg, $k);
+            }
+            return $r;
+        };
+        $ecrire($l, 'libelle', ins_modele_texte($c['libelle'] ?? ''), $tr('libelle'));
+        foreach (['aide', 'exemple', 'gauche', 'droite'] as $k) {
+            if (in_array($k, $props, true)) {
+                $ecrire($l, $k, ins_modele_texte($c[$k] ?? ''), $tr($k));
+            }
+        }
+        if (in_array('options', $props, true)) {
+            $opts = ins_modele_liste($c['options'] ?? []);
+            if (!($type === 'echelle' && $opts === ['1', '2', '3', '4', '5'])) {
+                $ecrire($l, 'options', $opts, $tr('options'));
+            } else {
+                $ecrire($l, 'options', '', $tr('options'));
+            }
+        }
+        if (in_array('obligatoire', $props, true) && !empty($c['obligatoire'])) {
+            $l[] = 'obligatoire = oui';
+        }
+        foreach (['defaut', 'min', 'max'] as $k) {
+            if (in_array($k, $props, true)) {
+                $v = ins_modele_texte($c[$k] ?? '');
+                if ($k === 'defaut' && $type === 'case') {
+                    $v = $v !== '' && ins_oui($v) ? 'oui' : '';
+                }
+                $ecrire($l, $k, $v);
+            }
+        }
+        if (in_array('unique', $props, true) && !empty($c['unique'])) {
+            $l[] = 'unique = oui';
+        }
+        $conds = [];
+        foreach (is_array($c['si'] ?? null) ? $c['si'] : [] as $cond) {
+            if (!is_array($cond)) {
+                continue;
+            }
+            $cible = ins_modele_texte($cond['champ'] ?? '');
+            $vals = ins_modele_liste($cond['valeurs'] ?? []);
+            if ($cible === '' || !$vals) {
+                continue;
+            }
+            if (($types[$cible] ?? '') === 'case') {
+                $vals = array_map(function ($v) { return ins_oui($v) ? 'oui' : 'non'; }, $vals);
+            }
+            $conds[] = $cible . (empty($cond['egal']) ? ' != ' : ' = ') . implode(' | ', $vals);
+        }
+        $ecrire($l, 'si', implode(' & ', $conds));
+    }
+    return implode("\n", $l) . "\n";
+}
+
+/** Document HTML complet de l'aperçu d'un formulaire (pour l'iframe de l'éditeur). */
+function ins_apercu_document(array $form, string $langue, string $choisi = ''): string
+{
+    $avant = ins_langue();
+    // Textes de l'éditeur : dans la langue de l'administration ; le formulaire : dans sa langue
+    $bandeau = t('edi_apercu_bandeau');
+    $noteAcces = $form['acces'] !== '' ? t($form['acces'] === 'lien' ? 'edi_apercu_lien' : 'edi_apercu_personnel') : '';
+    $lg = in_array($langue, $form['langues'], true) ? $langue : $form['langue'];
+    ins_langue($lg);
+    $f = ins_localiser($form, $lg);
+    $h = '<!DOCTYPE html><html lang="' . e($lg) . '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        . '<style>' . ins_css() . 'main{padding-top:.5rem}.champ,h2,.info{cursor:pointer}.choisi{outline:3px solid #1f5f8b;outline-offset:2px}'
+        . '.bandeau{font-size:.8rem;color:#57606a;border-bottom:1px dashed #c9d2dc;padding:.2rem 0;margin-bottom:.5rem}</style></head><body><main>';
+    $h .= '<div class="bandeau" lang="' . e($avant) . '">' . e($bandeau) . '</div>';
+    $h .= ins_liens_langues($f['langues'], $lg);
+    $h .= '<h1>' . e($f['titre']) . '</h1>';
+    if ($noteAcces !== '') {
+        $h .= '<p class="petit" lang="' . e($avant) . '">' . e($noteAcces) . '</p>';
+    }
+    if ($f['intro'] !== '') {
+        $h .= '<div class="info">' . nl2br(e($f['intro'])) . '</div>';
+    }
+    $h .= '<form onsubmit="return false" novalidate>' . ins_rendu_champs($f, [], [], true)
+        . '<p class="petit"><span class="req">*</span> ' . e(t('champ_obligatoire')) . '</p>'
+        . '<p><button type="button" disabled>' . e($f['bouton'] !== '' ? $f['bouton'] : t('bouton_defaut')) . '</button></p></form>';
+    $h .= ins_script_conditions();
+    // Clic sur un champ → sélection dans l'éditeur ; liens de langue → changement de langue d'aperçu
+    $h .= '<script>(function(){var choisi=' . json_encode($choisi) . ';'
+        . 'function marque(n){document.querySelectorAll(".choisi").forEach(function(x){x.classList.remove("choisi")});'
+        . 'var el=n&&document.querySelector("[data-nom=\""+n+"\"],[data-bloc=\""+n+"\"]");if(el){el.classList.add("choisi");}}'
+        . 'document.addEventListener("click",function(ev){var a=ev.target.closest("a[hreflang]");if(a){ev.preventDefault();'
+        . 'parent.postMessage({ins:"langue",langue:a.getAttribute("hreflang")},"*");return;}'
+        . 'var b=ev.target.closest("[data-nom],[data-bloc]");if(b){var n=b.getAttribute("data-nom")||b.getAttribute("data-bloc");'
+        . 'marque(n);parent.postMessage({ins:"choisir",nom:n},"*");}});'
+        . 'window.addEventListener("message",function(ev){if(ev.data&&ev.data.ins==="marquer"){marque(ev.data.nom);}});marque(choisi);})();</script>';
+    $h .= '</main></body></html>';
+    ins_langue($avant);
+    return $h;
+}
+
+/** Modèles de départ pour un nouveau formulaire. */
+function ins_modeles_depart(): array
+{
+    return [
+        'vide' => "[formulaire]\ntitre = " . ins_ini_texte(t('edi_modele_vide_titre')) . "\n\n[nom]\ntype = texte\nlibelle = "
+            . ins_ini_texte(t('edi_modele_nom')) . "\nobligatoire = oui\n",
+        'inscription' => "[formulaire]\ntitre = " . ins_ini_texte(t('edi_modele_inscription_titre')) . "\nplaces = 50\n\n"
+            . "[nom]\ntype = texte\nlibelle = " . ins_ini_texte(t('edi_modele_nom')) . "\nobligatoire = oui\n\n"
+            . "[email]\ntype = email\nlibelle = " . ins_ini_texte(t('edi_modele_email')) . "\nobligatoire = oui\nunique = oui\n\n"
+            . "[presence]\ntype = choix\nlibelle = " . ins_ini_texte(t('edi_modele_presence')) . "\noptions = " . ins_ini_texte(t('edi_modele_presence_options')) . "\nobligatoire = oui\n\n"
+            . "[remarques]\ntype = texte_long\nlibelle = " . ins_ini_texte(t('edi_modele_remarques')) . "\n",
+        'sondage' => "[formulaire]\ntitre = " . ins_ini_texte(t('edi_modele_sondage_titre')) . "\nafficher_numero = non\n\n"
+            . "[satisfaction]\ntype = echelle\nlibelle = " . ins_ini_texte(t('edi_modele_satisfaction')) . "\ngauche = " . ins_ini_texte(t('edi_modele_gauche'))
+            . "\ndroite = " . ins_ini_texte(t('edi_modele_droite')) . "\nobligatoire = oui\n\n"
+            . "[commentaires]\ntype = texte_long\nlibelle = " . ins_ini_texte(t('edi_modele_commentaires')) . "\n",
+    ];
 }
 
 /* ------------------------------------------------------------------ */
