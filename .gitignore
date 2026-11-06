@@ -1,0 +1,5 @@
+# Données d'inscription et fichiers techniques créés sur le serveur : jamais dans le dépôt
+inscription/prive/donnees/*.csv
+inscription/prive/donnees/.secret
+inscription/prive/donnees/.verrou
+inscription/prive/donnees/.temoin-*
