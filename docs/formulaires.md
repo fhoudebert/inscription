@@ -5,7 +5,7 @@
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
 [Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
-[Accès restreint](#accès-restreint) ·
+[Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
 
@@ -55,6 +55,7 @@ Réglages de la section `[formulaire]` :
 | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
 | `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
 | `langues`   | formulaire multilingue : langues proposées, ex. `"fr \| en"` (voir [Formulaire multilingue](#formulaire-multilingue)) | — |
+| `message`   | formulaire de commande : modèle du message envoyé au client quand sa commande est prête (voir [Formulaire de commande](#formulaire-de-commande)) | texte par défaut |
 
 ## Types de champs
 
@@ -71,6 +72,7 @@ Réglages de la section `[formulaire]` :
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
 | `case`       | une case unique (accord, consentement RGPD…) | `oui` / `non` |
 | `echelle`    | note sur une ligne (1 à 5 par défaut, ou les valeurs de `options`), avec textes `gauche` / `droite` aux extrémités | la note choisie |
+| `commande`   | tableau des produits disponibles d'un `catalogue`, quantité par produit, total estimé (un seul par formulaire) | le détail lisible + une colonne `<nom>_total` |
 | `titre`      | intertitre de section (rien à saisir) | — (pas de colonne) |
 | `info`       | paragraphe d'information (rien à saisir) | — (pas de colonne) |
 
@@ -89,6 +91,7 @@ Réglages de la section `[formulaire]` :
 | `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels
 
@@ -168,6 +171,7 @@ obligatoire = oui
 | `colloque.ini` | formulaire bilingue français / anglais |
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
+| `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
 
 ## Diffusion et lien de partage
 
@@ -216,6 +220,57 @@ Fonctionnement :
   l'accès est bloqué 15 minutes.
 
 Exemple complet : `prive/formulaires/ag-membres.ini`.
+
+## Formulaire de commande
+
+Pour prendre des commandes (panier de légumes, pain, colis, repas…) : un champ de type `commande` affiche les produits
+**disponibles** d'un catalogue, avec leur prix et leur unité ; le client indique les quantités et voit le **total estimé**
+se calculer.
+
+```ini
+[formulaire]
+titre   = "Panier de la semaine"
+message = "Bonjour {nom},
+Votre commande n° {numero} est prête :
+{detail}
+Total à régler : {total}
+{note}"
+
+[nom]
+type        = texte
+libelle     = "Nom et prénom"
+obligatoire = oui
+
+[telephone]
+type        = telephone
+libelle     = "Téléphone"
+obligatoire = oui
+
+[panier]
+type        = commande
+libelle     = "Votre commande"
+catalogue   = legumes
+obligatoire = oui
+```
+
+- **Le catalogue** (`prive/catalogues/legumes.csv`) se gère dans `admin.php` : produits, unités, prix, pas de quantité,
+  case « disponible » à cocher chaque semaine ; import depuis un tableur possible. Voir [Catalogues et commandes](administration.md#catalogues-et-commandes).
+  Une même denrée peut figurer plusieurs fois avec des unités et des prix différents (carotte à la botte et au kilo, chou chinois, chou frisé…).
+- **Le pas** d'un produit (0,5 pour un demi-kilo, 0,1 pour 100 g) fixe la quantité minimale et ses multiples ; sans pas, la quantité est libre.
+- **Les prix sont toujours ceux du catalogue** au moment de la commande : un prix modifié dans le navigateur est ignoré.
+  Un produit devenu indisponible entre-temps est refusé avec un message clair.
+- **Le fichier de réponses** contient une colonne lisible (« Carotte (kg) : 1,5 × 1,00 € = 1,50 € », une ligne par produit)
+  et une colonne `<nom>_total` avec le total estimé en nombre. Le détail structuré (pour la préparation) est enregistré
+  à part, dans `prive/donnees/commandes/`.
+- **Le message** (`message`) est le texte proposé au vendeur pour prévenir le client, à copier dans un SMS ou un e-mail.
+  Repères : `{numero}`, `{date}`, `{detail}` (une ligne par produit), `{total}`, `{note}` (note saisie à la préparation)
+  et `{nom_du_champ}` pour toute réponse du formulaire (`{nom}`, `{telephone}`, `{retrait}`…). Sans `message`, un texte par défaut est utilisé.
+- Avec un **accès restreint** (`acces = lien` ou `personnel`) et `modifiable = oui`, le client retrouve sa commande
+  pré-remplie et peut la modifier ; si elle était déjà préparée, la fiche de préparation le signale.
+- Un formulaire ne peut contenir qu'**un** champ `commande`. Le montant affiché est indicatif : le prix définitif
+  (pesée, produit manquant, remise) se fixe dans l'administration.
+
+Exemple complet : `prive/formulaires/panier.ini` et le catalogue fictif `prive/catalogues/legumes.csv`.
 
 ## Formulaire multilingue
 

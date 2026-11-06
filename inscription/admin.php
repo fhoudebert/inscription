@@ -310,6 +310,7 @@ if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action
         'reserves' => INS_NOMS_RESERVES, 'langue_config' => (string)$cfg['langue'],
         'langues' => array_map(function ($c) { return ['code' => $c, 'nom' => ins_textes($c)['nom_langue'] ?? $c]; }, ins_langues()),
         'existants' => array_values(array_map(function ($f) { return basename($f, '.ini'); }, glob($dirForm . '/*.ini') ?: [])),
+        'catalogues' => ins_catalogues(),
         'textes' => $textes,
     ];
     ins_entete($nouveau ? t('edi_titre_nouveau') : t('edi_titre', ['id' => $id]));
@@ -347,13 +348,17 @@ if ($action === 'ini') {
     exit;
 }
 
+/* ---------- Commandes et catalogues (pages et actions dans prive/admin-commandes.php) ---------- */
+$alerteCatalogue = '';
+require INS_PRIVE . '/admin-commandes.php';
+
 /* ---------- Actions de gestion (POST) ---------- */
 $message = '';
 $alerte = '';
 $detail = '';
 $nouveauxAcces = null;   // accès qui viennent d'être créés ou renouvelés (secrets affichés une seule fois)
 $ouvrirAcces = '';       // formulaire dont la rubrique « Accès » reste ouverte
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && !in_array($_POST['action'], $actionsCommandes, true)) {
     $act = (string)$_POST['action'];
     try {
         if (!hash_equals($jetonAdmin, (string)($_POST['_jeton'] ?? ''))) {
@@ -435,6 +440,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             if (!@unlink($dir . '/' . $n)) {
                 throw new RuntimeException(t('err_ecriture', ['fichier' => $n]));
+            }
+            // le détail des commandes va avec le fichier de réponses
+            $json = $dir . '/commandes/' . basename($n, '.csv') . '.json';
+            if (is_file($json)) {
+                @unlink($json);
             }
             header('Location: admin.php?' . http_build_query(['ok' => 'csv_supprime', 'id' => $n]), true, 303);
             exit;
@@ -622,6 +632,9 @@ if ($message !== '') {
 if ($alerte !== '') {
     echo '<div class="alerte">' . e($alerte) . ($detail !== '' ? '<br><b>' . e($detail) . '</b>' : '') . '</div>';
 }
+if ($alerteCatalogue !== '') {
+    echo '<div class="alerte">' . e($alerteCatalogue) . '</div>';
+}
 if ($nouveauxAcces !== null) {
     $fa = $nouveauxAcces['form'];
     $modeLien = $fa['acces'] === 'lien';
@@ -728,6 +741,13 @@ foreach ($formulaires as $id => $form) {
     if ($gestion) {
         echo '<a class="btn" href="?a=editeur&amp;id=' . e(rawurlencode($id)) . '">' . e(t('adm_modifier')) . '</a> ';
     }
+    $champCmd = ins_champ_commande($form);
+    if ($champCmd !== null) {
+        $cmds = ins_lire_commandes($form);
+        $aPreparer = count(array_filter($cmds, function ($c) { return in_array($c['statut'], ['nouvelle', 'preparee'], true); }));
+        echo '<a class="btn" href="?a=commandes&amp;id=' . e(rawurlencode($id)) . '">' . e(t('adm_cmd_bouton', ['n' => $aPreparer])) . '</a> '
+            . '<a class="btn sec" href="?a=catalogue&amp;nom=' . e(rawurlencode($champCmd['catalogue'])) . '">' . e(t('adm_cmd_catalogue')) . '</a> ';
+    }
     if ($nb > 0 || is_file($dir . '/' . $n)) {
         echo '<a class="btn" href="?a=telecharger&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_telecharger')) . ' ' . e($n) . '</a> '
             . '<a class="btn sec" href="?a=voir&amp;fichier=' . e(rawurlencode($n)) . '">' . e(t('adm_voir')) . '</a> ';
@@ -741,6 +761,34 @@ foreach ($formulaires as $id => $form) {
     }
     echo '</div>';
 }
+
+/* ---------- Catalogues de produits (formulaires de commande) ---------- */
+echo '<h2>' . e(t('adm_cat_rubrique')) . '</h2><div class="champ"><p class="petit">' . e(t('adm_cat_rubrique_aide')) . '</p>';
+$cats = ins_catalogues();
+if ($cats) {
+    echo '<ul>';
+    foreach ($cats as $cat) {
+        $prods = ins_lire_catalogue($cat);
+        $dispo = count(array_filter($prods, function ($p) { return $p['disponible']; }));
+        echo '<li><b>' . e($cat) . '</b> — ' . e(t('adm_cat_resume', ['n' => count($prods), 'dispo' => $dispo])) . ' · '
+            . ($gestion ? '<a href="?a=catalogue&amp;nom=' . e(rawurlencode($cat)) . '">' . e(t('adm_modifier')) . '</a> · ' : '')
+            . '<a href="?a=catalogue_csv&amp;nom=' . e(rawurlencode($cat)) . '">' . e(t('adm_telecharger')) . '</a></li>';
+    }
+    echo '</ul>';
+}
+if ($gestion) {
+    echo '<form method="post" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap"><input type="hidden" name="_jeton" value="' . e($jetonAdmin) . '">'
+        . '<input type="hidden" name="action" value="catalogue_nouveau"><input type="text" name="nom" placeholder="' . e(t('adm_cat_nom_ex')) . '" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*" required style="width:14rem" aria-label="' . e(t('adm_cat_nom')) . '">'
+        . '<button class="sec">' . e(t('adm_cat_nouveau')) . '</button></form>';
+    echo '<details><summary>' . e(t('adm_cat_importer')) . '</summary><form method="post" enctype="multipart/form-data" class="champ">'
+        . '<input type="hidden" name="_jeton" value="' . e($jetonAdmin) . '"><input type="hidden" name="action" value="catalogue_importer">'
+        . '<p class="petit">' . e(t('adm_cat_import_aide')) . '</p>'
+        . '<label class="lib">' . e(t('adm_cat_nom')) . '</label><input type="text" name="nom" pattern="[A-Za-z0-9][A-Za-z0-9_\-]*" required placeholder="' . e(t('adm_cat_nom_ex')) . '">'
+        . '<p><input type="file" name="csv" accept=".csv,text/csv,text/plain"></p>'
+        . '<label class="opt"><input type="checkbox" name="remplacer" value="1"> <span>' . e(t('adm_cat_remplacer')) . '</span></label>'
+        . '<button>' . e(t('adm_cat_importer')) . '</button></form></details>';
+}
+echo '</div>';
 
 /* ---------- Création dans l'éditeur ---------- */
 if ($gestion) {

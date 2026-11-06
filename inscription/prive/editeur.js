@@ -300,7 +300,8 @@
       unique: false, exemple: '', gauche: '', droite: '', si: [], trad: {}, _auto: true };
     if (['choix', 'liste', 'cases'].indexOf(type) >= 0) c.options = [T('edi_option') + ' 1', T('edi_option') + ' 2'];
     if (type === 'echelle') c.options = ['1', '2', '3', '4', '5'];
-    c.nom = nomUnique(type === 'titre' ? 'section' : (type === 'info' ? 'info' : versNom(lib)), c);
+    if (type === 'commande') { c.catalogue = D.catalogues[0] || ''; c.libelle = T('edi_nouveau_commande'); }
+    c.nom = nomUnique(type === 'titre' ? 'section' : (type === 'info' ? 'info' : versNom(c.libelle)), c);
     return c;
   }
   function ajouter(type) {
@@ -422,6 +423,11 @@
     props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
     props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
     props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
+    if (S.modele.champs.some(function (c) { return c.type === 'commande'; })) {
+      props.appendChild(traduisible(g, 'message', { libelle: T('edi_message_commande'), long: true, rows: 6, placeholder: T('edi_par_defaut'),
+        aide: T('edi_message_commande_aide', { champs: S.modele.champs.filter(function (c) { return DECORATIFS.indexOf(c.type) < 0 && c.type !== 'commande'; })
+          .map(function (c) { return '{' + c.nom + '}'; }).join(' ') }) }));
+    }
     if (S.langueEd) return;
 
     props.appendChild(groupe(T('edi_periode')));
@@ -501,6 +507,13 @@
     if (p.indexOf('gauche') >= 0) {
       props.appendChild(traduisible(c, 'gauche', { libelle: T('edi_gauche'), placeholder: T('edi_gauche_ex') }));
       props.appendChild(traduisible(c, 'droite', { libelle: T('edi_droite'), placeholder: T('edi_droite_ex') }));
+    }
+    if (p.indexOf('catalogue') >= 0 && !S.langueEd) {
+      var cats = D.catalogues.map(function (n) { return [n, n]; });
+      if (c.catalogue && D.catalogues.indexOf(c.catalogue) < 0) cats.unshift([c.catalogue, c.catalogue + ' ⚠']);
+      props.appendChild(choixListe(c, 'catalogue', cats.length ? cats : [['', '—']], T('edi_catalogue')));
+      props.appendChild(el('p', { classe: 'edi-aide' }, T('edi_catalogue_aide') + ' ',
+        c.catalogue ? el('a', { href: 'admin.php?a=catalogue&nom=' + encodeURIComponent(c.catalogue), target: '_blank', texte: T('edi_catalogue_ouvrir') }) : null));
     }
     if (p.indexOf('aide') >= 0) props.appendChild(traduisible(c, 'aide', { libelle: T('edi_aide'), long: true, rows: 2 }));
     if (p.indexOf('exemple') >= 0) props.appendChild(traduisible(c, 'exemple', { libelle: T('edi_exemple'), aide: T('edi_exemple_aide') }));

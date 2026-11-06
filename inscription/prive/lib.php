@@ -21,12 +21,16 @@ const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage te
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
-const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton'];
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message'];
 const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
-    'choix', 'liste', 'cases', 'case', 'echelle', 'titre', 'info',
+    'choix', 'liste', 'cases', 'case', 'echelle', 'commande', 'titre', 'info',
 ];
+// Catalogues de produits (prive/catalogues/<nom>.csv) pour les champs « commande »
+const INS_COLONNES_CATALOGUE = ['id', 'categorie', 'produit', 'unite', 'prix', 'pas', 'disponible'];
+// États d'une commande dans l'administration
+const INS_STATUTS_COMMANDE = ['nouvelle', 'preparee', 'remise', 'annulee'];
 // Types qui ne produisent pas de colonne dans le fichier de données
 const INS_TYPES_DECORATIFS = ['titre', 'info'];
 // Écritures alternatives (françaises et anglaises) acceptées pour les types
@@ -38,12 +42,13 @@ const INS_ALIAS_TYPES = [
     'dropdown' => 'liste', 'checkbox' => 'cases', 'checkboxes' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'consent' => 'case',
     'note' => 'echelle', 'échelle' => 'echelle', 'scale' => 'echelle', 'rating' => 'echelle',
+    'order' => 'commande', 'panier' => 'commande', 'basket' => 'commande',
     'section' => 'titre', 'title' => 'titre', 'heading' => 'titre', 'texte_info' => 'info',
 ];
 // Clés acceptées dans les descripteurs : nom interne => écritures possibles (français, anglais)
 const INS_CLES_FORMULAIRE = [
     'titre' => ['titre', 'title'], 'intro' => ['intro', 'introduction'], 'merci' => ['merci', 'thanks'],
-    'bouton' => ['bouton', 'button'], 'fichier' => ['fichier', 'file'],
+    'bouton' => ['bouton', 'button'], 'fichier' => ['fichier', 'file'], 'message' => ['message'],
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
@@ -55,6 +60,7 @@ const INS_CLES_CHAMP = [
     'obligatoire' => ['obligatoire', 'required'], 'options' => ['options'], 'defaut' => ['defaut', 'default'],
     'min' => ['min'], 'max' => ['max'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
+    'catalogue' => ['catalogue', 'catalog'],
 ];
 
 /* ------------------------------------------------------------------ */
@@ -78,6 +84,7 @@ function ins_config(): array
             'admin_mot_de_passe'  => '',
             'expediteur'          => '',
             'debug'               => false,
+            'devise'              => '€',
         ];
         $fichier = INS_PRIVE . '/config.php';
         $c = is_file($fichier) ? require $fichier : [];
@@ -382,6 +389,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'intro'           => trim((string)$lit('intro')),
         'merci'           => trim((string)$lit('merci')),   // vide = texte par défaut de la langue
         'bouton'          => trim((string)$lit('bouton')),  // idem
+        'message'         => trim((string)$lit('message')), // message de commande (vide = texte par défaut)
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
@@ -457,7 +465,23 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'droite'      => trim((string)$lc('droite')),
             'si'          => [],
             'trad'        => [],
+            'catalogue'   => '',
         ];
+        if ($type === 'commande') {
+            $cat = trim((string)$lc('catalogue'));
+            if (!ins_id_valide($cat)) {
+                throw new RuntimeException(t('err_catalogue_cle', ['f' => $f, 'nom' => $nom]));
+            }
+            if (!is_file(ins_fichier_catalogue($cat))) {
+                throw new RuntimeException(t('err_catalogue_absent', ['f' => $f, 'nom' => $nom, 'catalogue' => $cat]));
+            }
+            foreach ($form['champs'] as $autre) {
+                if ($autre['type'] === 'commande') {
+                    throw new RuntimeException(t('err_commande_unique', ['f' => $f, 'nom' => $nom]));
+                }
+            }
+            $champ['catalogue'] = $cat;
+        }
         foreach (array_slice($langues, 1) as $lg) {
             foreach (INS_TRAD_CHAMP as $cle) {
                 $v = ins_cle_trad($p, INS_CLES_CHAMP[$cle], $lg);
@@ -483,6 +507,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
     }
     if (!$vus) {
         throw new RuntimeException(t('err_aucun_champ', ['f' => $f]));
+    }
+    foreach ($form['champs'] as $c) {
+        if ($c['type'] === 'commande' && isset($form['champs'][$c['nom'] . '_total'])) {
+            throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $c['nom'] . '_total']));
+        }
     }
     return $form;
 }
@@ -640,6 +669,9 @@ function ins_colonnes(array $form): array
     foreach ($form['champs'] as $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
             $cols[] = $c['nom'];
+            if ($c['type'] === 'commande') {
+                $cols[] = $c['nom'] . '_total'; // total estimé, en nombre
+            }
         }
     }
     return $cols;
@@ -838,6 +870,16 @@ function ins_valider(array $form, array $post): array
             case 'cases':
                 $v = implode(' | ', ins_choisis($c, $b));
                 break;
+            case 'commande':
+                [$lignesCmd, $err] = ins_valider_commande($c, is_array($b) ? $b : []);
+                $total = ins_total_lignes($lignesCmd);
+                $v = ins_texte_lignes($lignesCmd);
+                $valeurs[$nom . '_total'] = $lignesCmd ? ins_nombre_csv($total) : '';
+                $valeurs['__commande'] = ['champ' => $nom, 'lignes' => $lignesCmd, 'total' => $total];
+                if ($err === '' && $c['obligatoire'] && !$lignesCmd) {
+                    $err = t('cmd_vide');
+                }
+                break;
             case 'case':
                 $cochee = $b !== null && $b !== '' && !is_array($b);
                 $v = ins_valeur_case($cochee, $form['langue']); // toujours dans la langue de base
@@ -859,7 +901,7 @@ function ins_valider(array $form, array $post): array
                     $err = ins_verifier_format($c, $v);
                 }
         }
-        if ($err === '' && $c['obligatoire'] && $c['type'] !== 'case' && $v === '') {
+        if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande'], true) && $v === '') {
             $err = t('v_obligatoire');
         }
         if ($err !== '') {
@@ -1112,6 +1154,10 @@ function ins_enregistrer(array $form, array $valeurs, string $langue = '', ?arra
             fclose($h);
         }
 
+        if (isset($valeurs['__commande'])) {
+            ins_enregistrer_detail_commande($form, $numero, $valeurs['__commande'], $index !== null);
+        }
+
         if ($acces !== null) {
             $maintenant = date('Y-m-d H:i:s');
             if ($acces['repondu'] === '') {
@@ -1145,6 +1191,14 @@ function ins_reponse_acces(array $form, string $identifiant): ?array
             $res = [];
             foreach ($cols as $k => $nom) {
                 $res[$nom] = ins_csv_brut((string)($l[$k] ?? ''));
+            }
+            // Quantités commandées (pour pré-remplir le tableau de commande)
+            $det = ins_lire_commandes($form)[$res['numero'] ?? ''] ?? null;
+            if ($det) {
+                $res['__commande'] = [];
+                foreach ($det['lignes'] as $lg) {
+                    $res['__commande'][$lg['id']] = ins_nombre_saisie((float)$lg['qte']);
+                }
             }
             return $res;
         }
@@ -1395,8 +1449,11 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
     $corps .= "\n";
     foreach ($form['champs'] as $nom => $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
-            $corps .= $c['libelle'] . ' : ' . ($valeurs[$nom] ?? '') . "\n";
+            $corps .= $c['libelle'] . ' : ' . ($c['type'] === 'commande' ? "\n" : '') . ($valeurs[$nom] ?? '') . "\n";
         }
+    }
+    if (isset($valeurs['__commande'])) {
+        $corps .= t('cmd_total_estime') . ' : ' . ins_prix((float)$valeurs['__commande']['total']) . "\n";
     }
     $entetes = "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n";
     $exp = (string)ins_config()['expediteur'];
@@ -1442,6 +1499,395 @@ function ins_verifier_jeton(string $fid, $jeton): string
 }
 
 /* ------------------------------------------------------------------ */
+/* Commandes : catalogues, montants, détail des commandes             */
+/* ------------------------------------------------------------------ */
+
+function ins_dossier_catalogues(): string
+{
+    $dir = INS_PRIVE . '/catalogues';
+    ins_preparer_dossier($dir);
+    return $dir;
+}
+
+function ins_fichier_catalogue(string $nom): string
+{
+    return INS_PRIVE . '/catalogues/' . $nom . '.csv';
+}
+
+/** @return string[] noms des catalogues disponibles */
+function ins_catalogues(): array
+{
+    $res = [];
+    foreach (glob(INS_PRIVE . '/catalogues/*.csv') ?: [] as $f) {
+        $n = basename($f, '.csv');
+        if (ins_id_valide($n)) {
+            $res[] = $n;
+        }
+    }
+    sort($res);
+    return $res;
+}
+
+/** Nombre saisi (« 1,5 », « 1.50 € », « 2 ») → float, ou null si illisible. */
+function ins_lire_nombre($v): ?float
+{
+    $v = str_replace(["\u{00A0}", ' ', '€', '$', '£'], '', trim((string)$v));
+    $v = str_replace(',', '.', $v);
+    return preg_match('/^-?\d+(\.\d+)?$/', $v) ? (float)$v : null;
+}
+
+/** Montant affiché : « 1 234,50 € » (fr), « €1,234.50 » (en). */
+function ins_prix(float $m): string
+{
+    $n = number_format(round($m, 2), 2, t('nombre_decimal'), t('nombre_milliers'));
+    return t('format_prix', ['n' => $n, 'devise' => (string)ins_config()['devise']]);
+}
+
+/** Quantité affichée sans zéros inutiles : 2, 0,5, 1,25. */
+function ins_quantite(float $q): string
+{
+    $s = rtrim(rtrim(number_format($q, 3, '.', ''), '0'), '.');
+    return str_replace('.', t('nombre_decimal'), $s);
+}
+
+/** Quantité pour une zone de saisie numérique (toujours avec un point). */
+function ins_nombre_saisie(float $q): string
+{
+    return rtrim(rtrim(number_format($q, 3, '.', ''), '0'), '.');
+}
+
+/** Quantité pour le fichier CSV (jusqu'à 3 décimales), même convention que ins_nombre_csv(). */
+function ins_quantite_csv(float $q): string
+{
+    $s = ins_nombre_saisie($q);
+    return (string)ins_config()['separateur'] === ';' ? str_replace('.', ',', $s) : $s;
+}
+
+/** Nombre pour le fichier CSV : virgule décimale avec le séparateur « ; » (tableurs français), point sinon. */
+function ins_nombre_csv(float $m): string
+{
+    $s = number_format(round($m, 2), 2, '.', '');
+    return (string)ins_config()['separateur'] === ';' ? str_replace('.', ',', $s) : $s;
+}
+
+/**
+ * Lit un catalogue. Chaque produit : id, categorie, produit, unite, prix (float), pas (float, 0 = libre), disponible (bool).
+ * @return array<string,array> indexé par id
+ */
+function ins_lire_catalogue(string $nom): array
+{
+    $res = [];
+    $f = ins_fichier_catalogue($nom);
+    if (ins_id_valide($nom) && is_file($f)) {
+        $lignes = ins_lire_csv($f);
+        foreach (array_slice($lignes, 1) as $l) {
+            $p = [];
+            foreach (INS_COLONNES_CATALOGUE as $k => $col) {
+                $p[$col] = trim((string)($l[$k] ?? ''));
+            }
+            if ($p['id'] === '' || $p['produit'] === '') {
+                continue;
+            }
+            $p['produit'] = ins_csv_brut($p['produit']);
+            $p['categorie'] = ins_csv_brut($p['categorie']);
+            $p['unite'] = ins_csv_brut($p['unite']);
+            $p['prix'] = max(0.0, (float)(ins_lire_nombre($p['prix']) ?? 0));
+            $p['pas'] = max(0.0, (float)(ins_lire_nombre($p['pas']) ?? 0));
+            $p['disponible'] = ins_oui($p['disponible']);
+            $res[$p['id']] = $p;
+        }
+    }
+    return $res;
+}
+
+/** Enregistre un catalogue (sous verrou). Les produits sans id en reçoivent un. */
+function ins_ecrire_catalogue(string $nom, array $produits): void
+{
+    if (!ins_id_valide($nom)) {
+        throw new RuntimeException(t('adm_up_nom', ['nom' => $nom]));
+    }
+    ins_dossier_catalogues();
+    $verrou = ins_verrouiller();
+    try {
+        $pris = [];
+        $lignes = [INS_COLONNES_CATALOGUE];
+        foreach ($produits as $p) {
+            $id = (string)($p['id'] ?? '');
+            if (!preg_match('/^[a-z0-9_-]{1,80}$/', $id) || isset($pris[$id])) {
+                $base = substr(trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $p['produit'] . '-' . $p['unite']) ?: 'p')), '-'), 0, 60) ?: 'p';
+                $id = $base;
+                $i = 2;
+                while (isset($pris[$id])) {
+                    $id = $base . '-' . $i++;
+                }
+            }
+            $pris[$id] = true;
+            $lignes[] = [$id, ins_csv_sur((string)$p['categorie']), ins_csv_sur((string)$p['produit']), ins_csv_sur((string)$p['unite']),
+                ins_nombre_csv((float)$p['prix']), $p['pas'] > 0 ? ins_quantite_csv((float)$p['pas']) : '', $p['disponible'] ? 'oui' : 'non'];
+        }
+        ins_ecrire_csv(ins_fichier_catalogue($nom), $lignes);
+    } finally {
+        ins_deverrouiller($verrou);
+    }
+}
+
+/**
+ * Lit un CSV de catalogue venu d'ailleurs (tableur) : séparateur « ; », « , » ou tabulation,
+ * en-têtes reconnus en français ou en anglais (produit, unité, prix, disponible, catégorie, pas).
+ * @return array liste de produits (sans id)
+ */
+function ins_importer_catalogue(string $contenu): array
+{
+    $contenu = preg_replace('/^\xEF\xBB\xBF/', '', str_replace("\r\n", "\n", $contenu)) ?? '';
+    if (!mb_check_encoding($contenu, 'UTF-8')) {
+        $contenu = mb_convert_encoding($contenu, 'UTF-8', 'Windows-1252');
+    }
+    $premiere = strtok($contenu, "\n") ?: '';
+    $sep = substr_count($premiere, ';') >= max(1, substr_count($premiere, ',')) ? ';' : (substr_count($premiere, "\t") > substr_count($premiere, ',') ? "\t" : ',');
+    $h = fopen('php://temp', 'w+');
+    fwrite($h, $contenu);
+    rewind($h);
+    $entete = null;
+    $cols = [];
+    $res = [];
+    $noms = [
+        'produit' => ['produit', 'product', 'article', 'nom', 'name', 'designation'],
+        'categorie' => ['categorie', 'category', 'rayon', 'famille'],
+        'unite' => ['unite', 'unit', 'conditionnement'],
+        'prix' => ['prix', 'prix unitaire', 'price', 'unit price', 'tarif'],
+        'pas' => ['pas', 'step', 'increment'],
+        'disponible' => ['disponible', 'available', 'dispo', 'stock'],
+        'variete' => ['variete', 'variety', 'sorte'],
+    ];
+    while (($l = fgetcsv($h, 0, $sep, '"', '')) !== false) {
+        if ($entete === null) {
+            foreach ($l as $i => $t) {
+                $t = strtolower(trim((string)iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', (string)$t)));
+                foreach ($noms as $cle => $alias) {
+                    if (in_array($t, $alias, true) && !isset($cols[$cle])) {
+                        $cols[$cle] = $i;
+                    }
+                }
+            }
+            if (!isset($cols['produit'])) {
+                throw new RuntimeException(t('adm_cat_import_entete'));
+            }
+            $entete = $l;
+            continue;
+        }
+        $val = function (string $cle) use ($l, $cols) {
+            return isset($cols[$cle]) ? trim((string)($l[$cols[$cle]] ?? '')) : '';
+        };
+        $produit = $val('produit');
+        if ($produit === '' || !preg_match('/\p{L}/u', $produit)) {
+            continue; // lignes vides ou sans nom de produit
+        }
+        if ($val('variete') !== '') {
+            $produit .= ' ' . $val('variete');
+        }
+        $dispo = $val('disponible');
+        $res[] = ['id' => '', 'categorie' => $val('categorie'), 'produit' => mb_substr($produit, 0, 120), 'unite' => mb_substr($val('unite'), 0, 40),
+            'prix' => max(0.0, (float)(ins_lire_nombre($val('prix')) ?? 0)), 'pas' => max(0.0, (float)(ins_lire_nombre($val('pas')) ?? 0)),
+            'disponible' => $dispo === '' ? true : (ins_oui($dispo) || (ins_lire_nombre($dispo) ?? 0) > 0)];
+    }
+    fclose($h);
+    return $res;
+}
+
+/**
+ * Vérifie les quantités envoyées pour un champ commande. Les prix viennent TOUJOURS du catalogue.
+ * @return array{0: array, 1: string} lignes commandées, message d'erreur
+ */
+function ins_valider_commande(array $c, array $quantites): array
+{
+    $catalogue = ins_lire_catalogue($c['catalogue']);
+    $lignes = [];
+    foreach ($catalogue as $id => $p) {
+        $brut = $quantites[$id] ?? '';
+        if (!is_string($brut) || trim($brut) === '') {
+            continue;
+        }
+        $q = ins_lire_nombre($brut);
+        if ($q === null || $q < 0 || $q > 10000) {
+            return [[], t('cmd_quantite_invalide', ['produit' => $p['produit']])];
+        }
+        if ($q == 0) {
+            continue;
+        }
+        if (!$p['disponible']) {
+            return [[], t('cmd_indisponible', ['produit' => $p['produit']])];
+        }
+        if ($p['pas'] > 0 && abs($q / $p['pas'] - round($q / $p['pas'])) > 1e-6) {
+            return [[], t('cmd_pas', ['produit' => $p['produit'], 'pas' => ins_quantite($p['pas']), 'unite' => $p['unite']])];
+        }
+        $lignes[] = ['id' => $id, 'produit' => $p['produit'], 'unite' => $p['unite'], 'prix' => $p['prix'], 'qte' => round($q, 3)];
+    }
+    return [$lignes, ''];
+}
+
+function ins_total_lignes(array $lignes): float
+{
+    $t = 0.0;
+    foreach ($lignes as $l) {
+        $t += round((float)$l['prix'] * (float)$l['qte'], 2);
+    }
+    return round($t, 2);
+}
+
+/** Une ligne lisible par produit : « Carotte (botte) : 2 × 1,50 € = 3,00 € ». */
+function ins_texte_lignes(array $lignes): string
+{
+    $res = [];
+    foreach ($lignes as $l) {
+        $res[] = t('cmd_ligne', ['produit' => $l['produit'], 'unite' => $l['unite'], 'qte' => ins_quantite((float)$l['qte']),
+            'prix' => ins_prix((float)$l['prix']), 'montant' => ins_prix(round((float)$l['prix'] * (float)$l['qte'], 2))]);
+    }
+    return implode("\n", $res);
+}
+
+/* Détail structuré des commandes : prive/donnees/commandes/<fichier>.json, indexé par numéro de réponse */
+
+function ins_fichier_commandes(array $form): string
+{
+    $dir = ins_dossier_donnees() . '/commandes';
+    ins_preparer_dossier($dir);
+    return $dir . '/' . $form['fichier'] . '.json';
+}
+
+function ins_lire_commandes(array $form): array
+{
+    $f = ins_fichier_commandes($form);
+    $d = is_file($f) ? json_decode((string)file_get_contents($f), true) : [];
+    return is_array($d) ? $d : [];
+}
+
+/** À appeler sous verrou. */
+function ins_ecrire_commandes(array $form, array $commandes): void
+{
+    $f = ins_fichier_commandes($form);
+    $tmp = $f . '.tmp-' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, json_encode($commandes, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_PRESERVE_ZERO_FRACTION)) === false
+        || !@rename($tmp, $f)) {
+        @unlink($tmp);
+        throw new RuntimeException(t('err_ecriture', ['fichier' => $f]));
+    }
+}
+
+/** Enregistre (sous le verrou de ins_enregistrer) la commande d'une réponse ; une modification par le client est signalée. */
+function ins_enregistrer_detail_commande(array $form, string $numero, array $cmd, bool $modification): void
+{
+    $toutes = ins_lire_commandes($form);
+    $avant = $toutes[$numero] ?? null;
+    $toutes[$numero] = [
+        'date' => date('Y-m-d H:i:s'),
+        'champ' => $cmd['champ'],
+        'lignes' => $cmd['lignes'],
+        'total' => $cmd['total'],
+        'statut' => $avant['statut'] ?? 'nouvelle',
+        'final' => $avant['final'] ?? null,
+        'note' => $avant['note'] ?? '',
+        'modifiee' => $modification && !empty($avant['final']),
+    ];
+    ins_ecrire_commandes($form, $toutes);
+}
+
+/** Champ « commande » du formulaire, ou null. */
+function ins_champ_commande(array $form): ?array
+{
+    foreach ($form['champs'] as $c) {
+        if ($c['type'] === 'commande') {
+            return $c;
+        }
+    }
+    return null;
+}
+
+/** Tableau de commande : produits disponibles par catégorie, quantité, sous-total et total estimé en direct. */
+function ins_rendu_commande(array $c, array $quantites, string $err, string $si): string
+{
+    $nom = $c['nom'];
+    $produits = array_filter(ins_lire_catalogue($c['catalogue']), function ($p) { return $p['disponible']; });
+    $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
+    $fmt = ['decimal' => t('nombre_decimal'), 'milliers' => t('nombre_milliers'), 'format' => t('format_prix'), 'devise' => (string)ins_config()['devise']];
+    $h = '<div class="champ commande' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="commande"' . $si . '>'
+        . '<fieldset style="border:0;margin:0;padding:0"><legend class="lib">' . e($c['libelle']) . $req . '</legend>';
+    if ($c['aide'] !== '') {
+        $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+    }
+    if (!$produits) {
+        $h .= '<p class="info">' . e(t('cmd_aucun_produit')) . '</p>';
+    } else {
+        $h .= '<div class="defile-x"><table class="cmd" data-format="' . e(json_encode($fmt, JSON_UNESCAPED_UNICODE)) . '"><thead><tr><th>'
+            . e(t('cmd_produit')) . '</th><th class="nb">' . e(t('cmd_prix')) . '</th><th class="nb">' . e(t('cmd_quantite')) . '</th><th class="nb">'
+            . e(t('cmd_montant')) . '</th></tr></thead><tbody>';
+        $categorie = null;
+        foreach ($produits as $id => $p) {
+            if ($p['categorie'] !== $categorie && $p['categorie'] !== '') {
+                $h .= '<tr class="cmd-cat"><th colspan="4">' . e($p['categorie']) . '</th></tr>';
+            }
+            $categorie = $p['categorie'];
+            $idc = 'q_' . $nom . '_' . $id;
+            $val = isset($quantites[$id]) && is_string($quantites[$id]) ? $quantites[$id] : '';
+            $h .= '<tr><td><label for="' . e($idc) . '">' . e($p['produit']) . '</label></td>'
+                . '<td class="nb">' . e(ins_prix($p['prix'])) . ' / ' . e($p['unite']) . '</td>'
+                . '<td class="nb"><input type="number" class="cmd-q" id="' . e($idc) . '" name="' . e($nom) . '[' . e($id) . ']" min="0" max="10000" step="'
+                . ($p['pas'] > 0 ? e(ins_nombre_saisie($p['pas'])) : 'any') . '" inputmode="decimal" value="' . e($val) . '" data-prix="'
+                . e(ins_nombre_saisie($p['prix'])) . '" aria-label="' . e(t('cmd_quantite') . ' — ' . $p['produit'] . ' (' . $p['unite'] . ')') . '"></td>'
+                . '<td class="nb cmd-st"></td></tr>';
+        }
+        $h .= '</tbody><tfoot><tr><th colspan="3" class="nb">' . e(t('cmd_total_estime')) . '</th><th class="nb cmd-total">' . e(ins_prix(0)) . '</th></tr></tfoot></table></div>'
+            . '<p class="petit">' . e(t('cmd_note_estimation')) . '</p>';
+    }
+    if ($err !== '') {
+        $h .= '<div class="msg">' . e($err) . '</div>';
+    }
+    $h .= '</fieldset></div>';
+    static $script = false;
+    if (!$script) {
+        $script = true;
+        $h .= ins_script_commande();
+    }
+    return $h;
+}
+
+/** Calcul en direct des sous-totaux et du total estimé (le serveur refait le calcul avec les prix du catalogue). */
+function ins_script_commande(): string
+{
+    return <<<'JS'
+<script>
+(function () {
+  function prix(m, f) {
+    var p = Math.round(m * 100) / 100, ent = Math.floor(Math.abs(p)).toString(), dec = Math.round((Math.abs(p) % 1) * 100).toString();
+    while (dec.length < 2) dec = '0' + dec;
+    ent = ent.replace(/\B(?=(\d{3})+(?!\d))/g, f.milliers);
+    return f.format.split('{n}').join((p < 0 ? '-' : '') + ent + f.decimal + dec).split('{devise}').join(f.devise);
+  }
+  function calcul(table) {
+    var f = JSON.parse(table.getAttribute('data-format')), total = 0;
+    table.querySelectorAll('.cmd-q').forEach(function (el) {
+      var q = parseFloat(String(el.value).replace(',', '.')), st = el.closest('tr').querySelector('.cmd-st');
+      if (q > 0) {
+        var m = Math.round(q * parseFloat(el.getAttribute('data-prix')) * 100) / 100;
+        total += m;
+        st.textContent = prix(m, f);
+        el.closest('tr').classList.add('cmd-choisi');
+      } else {
+        st.textContent = '';
+        el.closest('tr').classList.remove('cmd-choisi');
+      }
+    });
+    table.querySelector('.cmd-total').textContent = prix(total, f);
+  }
+  document.querySelectorAll('table.cmd').forEach(function (t) {
+    t.addEventListener('input', function () { calcul(t); });
+    calcul(t);
+  });
+})();
+</script>
+JS;
+}
+
+/* ------------------------------------------------------------------ */
 /* Affichage d'un formulaire (page publique et aperçu de l'éditeur)   */
 /* ------------------------------------------------------------------ */
 
@@ -1465,6 +1911,11 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             continue;
         }
 
+        if ($c['type'] === 'commande') {
+            $q = $premier ? ($reponseExistante['__commande'] ?? []) : (is_array($brut[$nom] ?? null) ? $brut[$nom] : []);
+            $h .= ins_rendu_commande($c, $q, $erreurs[$nom] ?? '', $si);
+            continue;
+        }
         if ($premier && $reponseExistante !== null) {
             $b = $reponseExistante[$nom] ?? null; // modification : réponse précédente
         } else {
@@ -1609,6 +2060,7 @@ const INS_PROPRIETES_TYPE = [
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
     'case'       => ['aide', 'obligatoire', 'defaut'],
+    'commande'   => ['aide', 'obligatoire', 'catalogue'],
     'titre'      => [],
     'info'       => [],
 ];
@@ -1617,7 +2069,7 @@ const INS_PROPRIETES_TYPE = [
 function ins_modele(array $form): array
 {
     $g = [];
-    foreach (['titre', 'intro', 'merci', 'bouton', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
         $g[$k] = (string)$form[$k];
     }
     // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
@@ -1636,7 +2088,7 @@ function ins_modele(array $form): array
             'nom' => $c['nom'], 'type' => $c['type'], 'libelle' => $c['libelle'], 'aide' => $c['aide'],
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
-            'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'],
+            'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'trad' => (object)$c['trad'],
         ];
@@ -1716,7 +2168,7 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
         }
     };
-    foreach (['titre', 'intro', 'merci', 'bouton'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message'] as $k) {
         $tr = [];
         foreach ($autres as $lg) {
             $tr[$lg] = $trad($g['trad'] ?? [], $lg, $k);
@@ -1781,6 +2233,13 @@ function ins_modele_vers_ini(string $id, array $m): string
             if (in_array($k, $props, true)) {
                 $ecrire($l, $k, ins_modele_texte($c[$k] ?? ''), $tr($k));
             }
+        }
+        if (in_array('catalogue', $props, true)) {
+            $cat = ins_modele_texte($c['catalogue'] ?? '');
+            if ($cat !== '' && !ins_id_valide($cat)) {
+                throw new RuntimeException(t('err_catalogue_cle', ['f' => "$id.ini", 'nom' => $nom]));
+            }
+            $ecrire($l, 'catalogue', $cat);
         }
         if (in_array('options', $props, true)) {
             $opts = ins_modele_liste($c['options'] ?? []);
@@ -1938,6 +2397,14 @@ textarea{min-height:6rem;resize:vertical}
 .echelle .opt{flex-direction:column;align-items:center;gap:0;margin:0;min-width:2.4rem}
 .echelle .bouts{display:flex;justify-content:space-between;gap:1rem;font-size:.88rem;color:#57606a;margin-top:.2rem}
 .lien{display:flex;gap:.4rem;align-items:center;margin:.4rem 0}
+table.cmd{font-size:.95rem}
+table.cmd td,table.cmd th{border-left:0;border-right:0}
+table.cmd .nb{text-align:right;white-space:nowrap}
+table.cmd input.cmd-q{width:5.5rem;text-align:right;padding:.3rem}
+table.cmd .cmd-cat th{background:#f1f3f5;font-size:.85rem;color:#57606a;position:static}
+table.cmd tr.cmd-choisi td{background:#eef4fa}
+table.cmd tfoot th{background:#fff;font-size:1.05rem;position:static}
+.defile-x{overflow-x:auto}
 .lien input{flex:1;font-family:ui-monospace,monospace;font-size:.85rem}
 .etiq{display:inline-block;font-size:.8rem;border-radius:4px;padding:0 .4rem;background:#e9eef3}
 .etiq.prive{background:#fff3cd}
@@ -1952,6 +2419,6 @@ td code{white-space:nowrap}
 td.actions form{display:block;margin:.15rem 0}
 td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
-@media (max-width:30rem){.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
+@media (max-width:30rem){table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
 CSS;
 }

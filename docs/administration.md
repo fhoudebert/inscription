@@ -4,7 +4,8 @@
 
 Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Éditeur de formulaires](#éditeur-de-formulaires) ·
 [Récupérer les réponses](#récupérer-les-réponses) ·
-[Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Zone privée](#zone-privée) · [Réglages](#réglages) ·
+[Gérer les formulaires](#gérer-les-formulaires) · [Accès personnels](#accès-personnels) · [Catalogues et commandes](#catalogues-et-commandes) ·
+[Zone privée](#zone-privée) · [Réglages](#réglages) ·
 [Langues de l'interface](#langues-de-linterface) · [Sécurité](#sécurité) · [Dépannage](#dépannage)
 
 ## Installation
@@ -177,6 +178,59 @@ Les accès sont enregistrés dans `prive/donnees/acces/<fichier>.csv` (identifia
 dans la zone privée. Ils restent en place si le formulaire est remplacé ; ils sont liés au nom du fichier de réponses
 (clé `fichier`). Ces actions demandent `'admin_gestion' => true`.
 
+## Catalogues et commandes
+
+Pour les formulaires qui contiennent un champ `commande` (voir [Formulaire de commande](formulaires.md#formulaire-de-commande)).
+
+### Catalogues
+
+Rubrique **Catalogues de produits** du tableau de bord : liste des catalogues (nombre de produits et de produits disponibles),
+**Nouveau catalogue**, **Importer un CSV**. Le bouton **Modifier** ouvre le catalogue sous forme de tableau :
+
+- une ligne par produit : **Disponible** (case), **Catégorie** (regroupe les produits sur le formulaire), **Produit**
+  (avec la variété : « Chou frisé »), **Unité** (kg, botte, pièce, barquette 250 g…), **Prix** par unité, **Pas** de quantité ;
+- **Tout disponible** / **Rien de disponible** (s'applique aux lignes affichées : combiné au filtre, on coche par exemple
+  tous les choux d'un coup), **Filtrer…**, **Ajouter un produit**, case **retirer** pour supprimer une ligne ;
+- **Enregistrer** : les changements valent pour les commandes suivantes ; les commandes déjà passées gardent les prix
+  du moment où elles ont été faites.
+
+Chaque semaine, il suffit donc d'ouvrir le catalogue, de cocher ce qui est disponible et d'ajuster les prix.
+
+**Importer un CSV** (depuis un tableur, séparateur `;` ou `,`) : une colonne `Produit` au moins ; colonnes reconnues
+`Catégorie`, `Produit`, `Variété` (ajoutée au nom), `Unité`, `Prix` (ou `Prix unitaire`), `Pas`, `Disponible`.
+Les lignes sans nom de produit sont ignorées ; une colonne `Disponible` vide vaut « disponible ». Vérifiez ensuite le tableau
+et enregistrez. **Télécharger** donne le catalogue en CSV, pour le retravailler dans un tableur et le réimporter.
+
+Les catalogues sont dans `prive/catalogues/` (zone privée).
+
+### Commandes
+
+Sur la fiche d'un formulaire de commande, le bouton **Commandes (n en cours)** ouvre la liste :
+
+- filtres **En cours** (à préparer + prêtes), **à préparer**, **prête**, **remise**, **annulée**, **Toutes** ;
+- pour chaque commande : numéro, date, client (premières réponses), nombre de produits, total (estimé ou définitif), état,
+  bouton **Préparer** ; en bas, le total des commandes affichées ;
+- **Quantités à préparer** : la somme, produit par produit, des commandes affichées (hors annulées) — de quoi savoir
+  combien récolter ou préparer ;
+- **Exporter les commandes (CSV)** : une ligne par commande avec les réponses, le détail, le total estimé et le total définitif.
+
+La fiche **Préparer** d'une commande :
+
+1. rappelle les réponses du client ;
+2. **Préparation et prix définitif** : pour chaque produit, la quantité commandée, la quantité **servie** (pesée, 0 si
+   manquant) et le **prix unitaire**, modifiables ; **+ Ajouter un produit** (remplacement, oubli) ; une ligne
+   d'**ajustement** (frais de livraison, remise en montant négatif) ; le total définitif se recalcule en direct ;
+3. **État** (à préparer, prête, remise, annulée) et **Note pour le client** ;
+4. **Enregistrer la préparation**, puis **Message à envoyer** : le texte (modèle `message` du formulaire) reprend
+   les quantités et prix définitifs ; on peut le retoucher, puis **Copier** et le coller dans un SMS ou un e-mail,
+   avec ses propres moyens. L'application n'envoie rien elle-même.
+
+Si le client modifie sa commande après sa préparation (formulaire à accès restreint et modifiable), la fiche l'indique ;
+**Repartir de la commande du client** reprend sa nouvelle commande.
+
+Le détail des commandes est dans `prive/donnees/commandes/<fichier>.json` ; il est supprimé avec le fichier de réponses
+(**Supprimer les réponses**). Créer, modifier un catalogue et préparer une commande demandent `'admin_gestion' => true`.
+
 ## Zone privée
 
 Les réponses contiennent des données personnelles : personne ne doit pouvoir lire
@@ -184,7 +238,7 @@ Les réponses contiennent des données personnelles : personne ne doit pouvoir l
 
 ### a) Par défaut : .htaccess (Apache)
 
-Les dossiers `prive/`, `prive/donnees/` (et `donnees/acces/`), `prive/formulaires/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
+Les dossiers `prive/`, `prive/donnees/` (et `donnees/acces/`, `donnees/commandes/`), `prive/formulaires/`, `prive/catalogues/` et `prive/lang/` contiennent un fichier `.htaccess` qui interdit
 tout accès web. Cela fonctionne chez la plupart des hébergeurs mutualisés (serveurs Apache ou compatibles).
 
 **Vérification** : connectez-vous à `admin.php`, un test automatique s'affiche en haut de la page :
@@ -253,6 +307,7 @@ Fichier `prive/config.php` :
 | `liste_publique` | `false` : `index.php` sans `?f=` n'affiche aucune liste, même des formulaires diffusés |
 | `longueur_max` | longueur maximale d'une réponse |
 | `expediteur` | adresse d'expédition des notifications (souvent obligatoirement une adresse de votre domaine) |
+| `devise` | symbole monétaire des formulaires de commande : `€` (défaut), `CHF`, `$`… |
 | `debug` | `true` : affiche le détail des erreurs (à remettre à `false` ensuite) |
 
 ## Langues de l'interface
@@ -308,5 +363,7 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | mot de passe perdu | **Nouveau mot de passe** sur la ligne de l'accès, puis le transmettre à la personne |
 | l'éditeur refuse d'enregistrer : « modifié entre-temps » | le fichier a changé depuis l'ouverture de l'éditeur (FTP, autre fenêtre) : recharger la page |
 | l'éditeur reste vide | JavaScript désactivé dans le navigateur |
+| « … utilise le catalogue …, introuvable » | le catalogue nommé par `catalogue =` n'existe pas dans `prive/catalogues/` : le créer (rubrique Catalogues) ou corriger le nom |
+| un produit n'apparaît pas sur le formulaire de commande | il n'est pas coché « disponible » dans le catalogue |
 | « le fichier de réponses … est déjà celui du formulaire … » | le `.ini` (souvent une copie) contient `fichier = …` comme un autre formulaire : retirer la ligne, ou vider « Nom du fichier de réponses » dans l'éditeur |
 | « Votre session d'administration a expiré » dans l'éditeur | connexion de plus de 4 h : se reconnecter dans un autre onglet, puis enregistrer (les modifications restent dans l'éditeur) |

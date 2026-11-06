@@ -43,6 +43,9 @@ return [
     // Chez beaucoup d'hébergeurs, elle doit appartenir à votre domaine.
     'expediteur'          => '',
 
+    // Symbole monétaire des formulaires de commande (champ « commande »)
+    'devise'              => '€',
+
     // true : affiche le détail des erreurs (descripteur mal écrit…). À remettre à false ensuite.
     'debug'               => false,
 ];

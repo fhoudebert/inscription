@@ -1,6 +1,6 @@
 # inscription — formulaires d'inscription et sondages pour hébergement mutualisé
 
-Recueillir des inscriptions ou des réponses à un sondage sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…),
+Recueillir des inscriptions, des réponses à un sondage ou des **commandes** sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…),
 sans base de données ni programmation :
 
 - chaque formulaire est **décrit dans un fichier texte** (`.ini`), qu'on peut écrire à la main ou créer et modifier
@@ -11,6 +11,9 @@ sans base de données ni programmation :
   et peut modifier sa réponse — les robots et les inconnus ne peuvent rien envoyer ;
 - une **page d'administration** protégée par mot de passe permet de télécharger les réponses, copier les liens de partage,
   créer les accès personnels, créer, modifier ou supprimer des formulaires ;
+- un formulaire peut prendre des **commandes** sur un catalogue de produits (prix, unité, disponibilité) avec total estimé ;
+  l'admin donne les quantités à préparer, permet de fixer le prix définitif de chaque commande et prépare le message
+  à copier dans un SMS ou un e-mail ;
 - l'interface est en **français et en anglais**, et un formulaire peut être **multilingue** (langue du navigateur, changement par un lien).
 
 Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune session PHP, aucune base MySQL.
@@ -19,8 +22,8 @@ Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune
 
 | page | contenu |
 |------|---------|
-| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, accès restreint, formulaires multilingues, exemples |
-| **[Administration](docs/administration.md)** | page `admin.php`, éditeur de formulaires, récupération des réponses, gestion des formulaires, accès personnels, zone privée, réglages, sécurité, dépannage, langues de l'interface |
+| **[Créer un formulaire](docs/formulaires.md)** | syntaxe des fichiers `.ini`, types de champs, champs conditionnels, diffusion, accès restreint, formulaire de commande, formulaires multilingues, exemples |
+| **[Administration](docs/administration.md)** | page `admin.php`, éditeur de formulaires, récupération des réponses, gestion des formulaires, accès personnels, catalogues et commandes, zone privée, réglages, sécurité, dépannage, langues de l'interface |
 
 ## Installation en bref
 
@@ -49,6 +52,7 @@ inscription/                 ← dossier à copier sur le site
     ├── editeur.js, .css     ← l'éditeur de formulaires de admin.php
     ├── lang/                ← textes de l'interface (fr.php, en.php)
     ├── formulaires/         ← un fichier .ini par formulaire (+ exemples)
+    ├── catalogues/          ← catalogues de produits des formulaires de commande
     └── donnees/             ← un fichier .csv de réponses par formulaire
 ```
 
@@ -75,7 +79,8 @@ Déposé sous `prive/formulaires/reunion.ini` (par FTP, par téléversement ou c
 `index.php?f=reunion` ; les réponses arrivent dans `prive/donnees/reunion.csv`.
 
 Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),
-`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe).
+`colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe),
+`panier.ini` (commande du panier de la semaine d'un maraîcher, sur le catalogue fictif `legumes`).
 Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
 
 ## Données personnelles
