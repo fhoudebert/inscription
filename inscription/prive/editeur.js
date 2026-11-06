@@ -300,6 +300,7 @@
       unique: false, exemple: '', gauche: '', droite: '', si: [], trad: {}, _auto: true };
     if (['choix', 'liste', 'cases'].indexOf(type) >= 0) c.options = [T('edi_option') + ' 1', T('edi_option') + ' 2'];
     if (type === 'echelle') c.options = ['1', '2', '3', '4', '5'];
+    if (type === 'grille') { c.lignes = [T('edi_ligne') + ' 1', T('edi_ligne') + ' 2']; c.options = [T('edi_grille_oui'), T('edi_grille_non')]; c.multiple = false; }
     if (type === 'commande') { c.catalogue = D.catalogues[0] || ''; c.libelle = T('edi_nouveau_commande'); }
     c.nom = nomUnique(type === 'titre' ? 'section' : (type === 'info' ? 'info' : versNom(c.libelle)), c);
     return c;
@@ -556,10 +557,19 @@
       props.appendChild(choixListe(c, 'type', D.types.map(function (t) { return [t, T('type_' + t)]; }), T('edi_type'), function () {
         if (['choix', 'liste', 'cases'].indexOf(c.type) >= 0 && !(c.options || []).length) c.options = [T('edi_option') + ' 1', T('edi_option') + ' 2'];
         if (c.type === 'echelle' && !(c.options || []).length) c.options = ['1', '2', '3', '4', '5'];
+        if (c.type === 'grille') {
+          if (!(c.lignes || []).length) c.lignes = [T('edi_ligne') + ' 1', T('edi_ligne') + ' 2'];
+          if (!(c.options || []).length) c.options = [T('edi_grille_oui'), T('edi_grille_non')];
+        }
         dessinerListe(); dessinerProps();
       }));
     }
-    if (p.indexOf('options') >= 0) {
+    if (p.indexOf('lignes') >= 0) {
+      props.appendChild(traduisible(c, 'lignes', { libelle: T('edi_lignes'), long: true, rows: 4, liste: true, aide: T('edi_lignes_aide') }));
+    }
+    if (p.indexOf('options') >= 0 && c.type === 'grille') {
+      props.appendChild(traduisible(c, 'options', { libelle: T('edi_colonnes'), long: true, rows: 3, liste: true, aide: T('edi_options_aide') }));
+    } else if (p.indexOf('options') >= 0) {
       props.appendChild(traduisible(c, 'options', { libelle: T('edi_options'), long: true, rows: 5, liste: true,
         aide: c.type === 'echelle' ? T('edi_options_echelle') : T('edi_options_aide'), apres: optionsModifiees(c) }));
     }
@@ -580,6 +590,7 @@
 
     if (p.indexOf('obligatoire') >= 0) props.appendChild(caseCocher(c, 'obligatoire', c.type === 'case' ? T('edi_obligatoire_case') : T('edi_obligatoire'), dessinerListe));
     if (p.indexOf('unique') >= 0) props.appendChild(caseCocher(c, 'unique', T('edi_unique')));
+    if (p.indexOf('multiple') >= 0) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
     if (p.indexOf('min') >= 0) {
       var tp = c.type === 'date' ? 'date' : 'number';
       var lib = c.type === 'nombre' ? ['edi_val_min', 'edi_val_max'] : c.type === 'date' ? ['edi_date_min', 'edi_date_max'] : ['edi_long_min', 'edi_long_max'];

@@ -25,10 +25,10 @@ const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'lo
 // Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
 const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
 const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
-const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
+const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
-    'choix', 'liste', 'cases', 'case', 'echelle', 'commande', 'titre', 'info',
+    'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'titre', 'info',
 ];
 // Catalogues de produits (prive/catalogues/<nom>.csv) pour les champs « commande »
 const INS_COLONNES_CATALOGUE = ['id', 'categorie', 'produit', 'unite', 'prix', 'pas', 'disponible'];
@@ -45,6 +45,7 @@ const INS_ALIAS_TYPES = [
     'dropdown' => 'liste', 'checkbox' => 'cases', 'checkboxes' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'consent' => 'case',
     'note' => 'echelle', 'échelle' => 'echelle', 'scale' => 'echelle', 'rating' => 'echelle',
+    'grid' => 'grille', 'matrix' => 'grille', 'tableau' => 'grille', 'matrice' => 'grille',
     'order' => 'commande', 'panier' => 'commande', 'basket' => 'commande',
     'section' => 'titre', 'title' => 'titre', 'heading' => 'titre', 'texte_info' => 'info',
 ];
@@ -61,7 +62,8 @@ const INS_CLES_FORMULAIRE = [
 ];
 const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
-    'obligatoire' => ['obligatoire', 'required'], 'options' => ['options'], 'defaut' => ['defaut', 'default'],
+    'obligatoire' => ['obligatoire', 'required'], 'options' => ['options', 'colonnes', 'columns'], 'defaut' => ['defaut', 'default'],
+    'lignes' => ['lignes', 'rows'], 'multiple' => ['multiple'],
     'min' => ['min'], 'max' => ['max'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
     'catalogue' => ['catalogue', 'catalog'],
@@ -290,6 +292,27 @@ function ins_liste_options(string $v): array
     return array_values(array_filter(array_map('trim', explode('|', $v)), 'strlen'));
 }
 
+/** Repère d'une ligne de grille, d'après son libellé : « Vendredi 12 » → vendredi_12 (colonne <champ>_vendredi_12). */
+function ins_id_ligne(string $libelle): string
+{
+    $s = function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $libelle) : $libelle;
+    $s = trim((string)preg_replace('/[^a-z0-9]+/', '_', strtolower($s)), '_');
+    return substr($s, 0, 40) ?: 'l' . substr(sha1($libelle), 0, 6);
+}
+
+/** Réponse à une grille en une seule valeur lisible : « Vendredi : Oui » une ligne par ligne de la grille. */
+function ins_resume_grille(array $c, array $valeurs): string
+{
+    $r = [];
+    foreach ($c['lignes_id'] as $i => $idl) {
+        $v = (string)($valeurs[$c['nom'] . '_' . $idl] ?? '');
+        if ($v !== '') {
+            $r[] = $c['lignes'][$i] . ' : ' . $v;
+        }
+    }
+    return implode("\n", $r);
+}
+
 /* ------------------------------------------------------------------ */
 /* Descripteurs de formulaires                                        */
 /* ------------------------------------------------------------------ */
@@ -457,8 +480,25 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         if ($type === 'echelle' && !$options) {
             $options = ['1', '2', '3', '4', '5'];
         }
+        if ($type === 'grille' && count($options) < 1) {
+            throw new RuntimeException(t('err_grille_colonnes', ['f' => $f, 'nom' => $nom]));
+        }
         if (in_array($type, ['choix', 'liste', 'cases'], true) && count($options) < 1) {
             throw new RuntimeException(t('err_options', ['f' => $f, 'nom' => $nom, 'type' => $type]));
+        }
+        $lignes = $type === 'grille' ? ins_liste_options((string)$lc('lignes')) : [];
+        $lignesId = [];
+        if ($type === 'grille') {
+            if (!$lignes) {
+                throw new RuntimeException(t('err_grille_lignes', ['f' => $f, 'nom' => $nom]));
+            }
+            foreach ($lignes as $lg) {
+                $idl = ins_id_ligne($lg);
+                if (in_array($idl, $lignesId, true)) {
+                    throw new RuntimeException(t('err_grille_double', ['f' => $f, 'nom' => $nom, 'ligne' => $lg]));
+                }
+                $lignesId[] = $idl;
+            }
         }
         $min = (string)$lc('min');
         $max = (string)$lc('max');
@@ -479,6 +519,9 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'si'          => [],
             'trad'        => [],
             'catalogue'   => '',
+            'lignes'      => $lignes,   // grille : libellés des lignes (traduisibles)
+            'lignes_id'   => $lignesId, // grille : repères des lignes → colonnes <nom>_<repère> du CSV
+            'multiple'    => $type === 'grille' && ins_oui($lc('multiple')),
         ];
         if ($type === 'commande') {
             $cat = trim((string)$lc('catalogue'));
@@ -501,10 +544,12 @@ function ins_analyser_formulaire(string $id, string $contenu): array
                 if ($v === null || $v === '') {
                     continue;
                 }
-                if ($cle === 'options') {
+                if ($cle === 'options' || $cle === 'lignes') {
                     $v = ins_liste_options($v);
-                    if (count($v) !== count($options)) {
-                        throw new RuntimeException(t('err_options_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($options)]));
+                    $attendu = $cle === 'options' ? $options : $lignes;
+                    if (count($v) !== count($attendu)) {
+                        $cleTrad = $cle === 'lignes' ? 'lignes' : ($type === 'grille' ? 'colonnes' : 'options');
+                        throw new RuntimeException(t('err_liste_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($attendu), 'cle' => $cleTrad]));
                     }
                 }
                 $champ['trad'][$lg][$cle] = $v;
@@ -525,6 +570,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         if ($c['type'] === 'commande' && isset($form['champs'][$c['nom'] . '_total'])) {
             throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $c['nom'] . '_total']));
         }
+    }
+    // Colonnes en double (une ligne de grille « vehiculer_samedi » et un champ du même nom…)
+    $doubles = array_keys(array_filter(array_count_values(ins_colonnes($form + ['acces' => ''])), function ($n) { return $n > 1; }));
+    if ($doubles) {
+        throw new RuntimeException(t('err_colonne_double', ['f' => $f, 'colonne' => $doubles[0]]));
     }
     return $form;
 }
@@ -568,6 +618,9 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         }
         $valeurs = array_values(array_filter(array_map('trim', explode('|', $m[3])), 'strlen'));
         $c = $connus[$cible];
+        if (in_array($c['type'], ['grille', 'commande'], true)) {
+            throw new RuntimeException(t('err_condition_grille', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
+        }
         if ($c['type'] === 'case') {
             $valeurs = array_map(function ($v) { return ins_oui($v) ? '1' : '0'; }, $valeurs);
         } elseif ($c['options']) {
@@ -681,6 +734,12 @@ function ins_colonnes(array $form): array
     }
     foreach ($form['champs'] as $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
+            if ($c['type'] === 'grille') {
+                foreach ($c['lignes_id'] as $idl) {
+                    $cols[] = $c['nom'] . '_' . $idl; // une colonne par ligne de la grille
+                }
+                continue;
+            }
             $cols[] = $c['nom'];
             if ($c['type'] === 'commande') {
                 $cols[] = $c['nom'] . '_total'; // total estimé, en nombre
@@ -866,6 +925,9 @@ function ins_valider(array $form, array $post): array
         $visibles[$nom] = $visible;
         if (!$visible) {
             $valeurs[$nom] = '';
+            foreach ($c['lignes_id'] as $idl) {
+                $valeurs[$nom . '_' . $idl] = '';
+            }
             continue;
         }
 
@@ -882,6 +944,29 @@ function ins_valider(array $form, array $post): array
                 break;
             case 'cases':
                 $v = implode(' | ', ins_choisis($c, $b));
+                break;
+            case 'grille':
+                $b = is_array($b) ? $b : [];
+                $manquent = [];
+                foreach ($c['lignes_id'] as $i => $idl) {
+                    $bl = $b[$idl] ?? null;
+                    if ($c['multiple']) {
+                        $vl = implode(' | ', ins_choisis($c, is_array($bl) ? $bl : null));
+                    } else {
+                        $vl = ins_choisis($c, is_array($bl) ? null : $bl)[0] ?? '';
+                        if ($vl === '' && is_string($bl) && $bl !== '') {
+                            $err = t('v_choix_invalide');
+                        }
+                    }
+                    $valeurs[$nom . '_' . $idl] = $vl;
+                    if ($vl === '') {
+                        $manquent[] = $c['lignes'][$i];
+                    }
+                }
+                if ($err === '' && $c['obligatoire'] && $manquent) {
+                    $err = count($manquent) === count($c['lignes']) ? t('v_obligatoire') : t('v_grille_lignes', ['lignes' => implode(', ', $manquent)]);
+                }
+                $v = ins_resume_grille($c, $valeurs); // pour la notification et les messages
                 break;
             case 'commande':
                 [$lignesCmd, $err] = ins_valider_commande($c, is_array($b) ? $b : []);
@@ -914,7 +999,7 @@ function ins_valider(array $form, array $post): array
                     $err = ins_verifier_format($c, $v);
                 }
         }
-        if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande'], true) && $v === '') {
+        if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande', 'grille'], true) && $v === '') {
             $err = t('v_obligatoire');
         }
         if ($err !== '') {
@@ -1538,7 +1623,8 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
     $corps .= "\n";
     foreach ($form['champs'] as $nom => $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
-            $corps .= $c['libelle'] . ' : ' . ($c['type'] === 'commande' ? "\n" : '') . ($valeurs[$nom] ?? '') . "\n";
+            $v = $c['type'] === 'grille' ? ins_resume_grille($c, $valeurs) : ($valeurs[$nom] ?? '');
+            $corps .= $c['libelle'] . ' : ' . (in_array($c['type'], ['commande', 'grille'], true) ? "\n" : '') . $v . "\n";
         }
     }
     if (isset($valeurs['__commande'])) {
@@ -2137,6 +2223,10 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             $h .= ins_rendu_commande($c, $q, $erreurs[$nom] ?? '', $si);
             continue;
         }
+        if ($c['type'] === 'grille') {
+            $h .= ins_rendu_grille($c, $premier ? ($reponseExistante ?? []) : null, is_array($brut[$nom] ?? null) ? $brut[$nom] : [], $erreurs[$nom] ?? '', $si);
+            continue;
+        }
         if ($premier && $reponseExistante !== null && array_key_exists($nom, $reponseExistante)) {
             $b = $reponseExistante[$nom]; // réponse précédente, ou valeur connue grâce à l'accès
         } else {
@@ -2221,6 +2311,53 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
     return $h;
 }
 
+/**
+ * Champ « grille » : un tableau, une ligne par question (Vendredi, Samedi…), une colonne par réponse (Oui, Non) ;
+ * boutons radio (une réponse par ligne) ou cases à cocher (multiple = oui). Sur téléphone, les lignes s'empilent.
+ * $existante : réponse enregistrée (colonnes <nom>_<repère>) au premier affichage ; $saisie : saisie renvoyée.
+ */
+function ins_rendu_grille(array $c, ?array $existante, array $saisie, string $err, string $si): string
+{
+    $nom = $c['nom'];
+    $idh = 'c_' . $nom;
+    $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
+    $h = '<div class="champ' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="grille"' . $si . '>'
+        . '<fieldset style="border:0;margin:0;padding:0"' . ($err !== '' ? ' aria-describedby="' . $idh . '_e"' : '') . '>'
+        . '<legend class="lib">' . e($c['libelle']) . $req . '</legend>';
+    if ($c['aide'] !== '') {
+        $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+    }
+    $h .= '<table class="grille"><thead><tr><td></td>';
+    foreach ($c['options_aff'] as $o) {
+        $h .= '<th scope="col">' . e($o) . '</th>';
+    }
+    $h .= '</tr></thead><tbody>';
+    foreach ($c['lignes_id'] as $i => $idl) {
+        if ($existante !== null) {
+            $v = (string)($existante[$nom . '_' . $idl] ?? '');
+            $sel = $v === '' ? [] : array_map('trim', explode('|', $v));
+        } else {
+            $b = $saisie[$idl] ?? null;
+            $sel = is_array($b) ? array_values(array_filter($b, 'is_string')) : (is_string($b) ? [$b] : []);
+        }
+        $libLigne = (string)($c['lignes'][$i] ?? $idl);
+        $manque = $err !== '' && !$sel;
+        $h .= '<tr' . ($manque ? ' class="manque"' : '') . '><th scope="row" id="' . e($idh . '_' . $idl) . '">' . e($libLigne) . '</th>';
+        foreach ($c['options'] as $k => $opt) {
+            $aff = (string)$c['options_aff'][$k];
+            $h .= '<td><label class="opt"><input type="' . ($c['multiple'] ? 'checkbox' : 'radio') . '" name="' . e($nom . '[' . $idl . ']' . ($c['multiple'] ? '[]' : '')) . '"'
+                . ' value="' . e($opt) . '"' . (in_array($opt, $sel, true) ? ' checked' : '') . ' aria-label="' . e($libLigne . ' : ' . $aff) . '">'
+                . '<span class="grille-m" aria-hidden="true">' . e($aff) . '</span></label></td>';
+        }
+        $h .= '</tr>';
+    }
+    $h .= '</tbody></table></fieldset>';
+    if ($err !== '') {
+        $h .= '<div class="msg" id="' . $idh . '_e">' . e($err) . '</div>';
+    }
+    return $h . '</div>';
+}
+
 /** Script de l'affichage conditionnel (« si = »). */
 function ins_script_conditions(): string
 {
@@ -2280,6 +2417,7 @@ const INS_PROPRIETES_TYPE = [
     'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
+    'grille'     => ['aide', 'obligatoire', 'lignes', 'options', 'multiple'],
     'case'       => ['aide', 'obligatoire', 'defaut'],
     'commande'   => ['aide', 'obligatoire', 'catalogue'],
     'titre'      => [],
@@ -2310,6 +2448,7 @@ function ins_modele(array $form): array
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
+            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'],
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'trad' => (object)$c['trad'],
         ];
@@ -2472,7 +2611,12 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
             $ecrire($l, 'catalogue', $cat);
         }
-        if (in_array('options', $props, true)) {
+        if (in_array('lignes', $props, true)) {
+            $ecrire($l, 'lignes', ins_modele_liste($c['lignes'] ?? []), $tr('lignes'));
+        }
+        if (in_array('options', $props, true) && $type === 'grille') {
+            $ecrire($l, 'colonnes', ins_modele_liste($c['options'] ?? []), $tr('options'));
+        } elseif (in_array('options', $props, true)) {
             $opts = ins_modele_liste($c['options'] ?? []);
             if (!($type === 'echelle' && $opts === ['1', '2', '3', '4', '5'])) {
                 $ecrire($l, 'options', $opts, $tr('options'));
@@ -2494,6 +2638,9 @@ function ins_modele_vers_ini(string $id, array $m): string
         }
         if (in_array('unique', $props, true) && !empty($c['unique'])) {
             $l[] = 'unique = oui';
+        }
+        if (in_array('multiple', $props, true) && !empty($c['multiple'])) {
+            $l[] = 'multiple = oui';
         }
         $conds = [];
         foreach (is_array($c['si'] ?? null) ? $c['si'] : [] as $cond) {
@@ -2655,6 +2802,14 @@ td code{white-space:nowrap}
 td.actions form{display:block;margin:.15rem 0}
 td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
+table.grille{width:auto;max-width:100%;background:transparent;font-size:inherit;margin:.3rem 0}
+table.grille th,table.grille td{position:static;background:transparent;border:0;border-bottom:1px solid #e3e8ee;padding:.35rem .7rem;text-align:center;font-weight:normal}
+table.grille thead th{font-weight:600;font-size:.9rem}
+table.grille tbody th{text-align:left;padding-left:0}
+table.grille label.opt{display:inline-flex;margin:0;padding:.2rem;justify-content:center}
+table.grille .grille-m{display:none}
+table.grille tr.manque th{color:#b42318;font-weight:600}
+@media (max-width:30rem){table.grille thead{display:none}table.grille,table.grille tbody,table.grille tr{display:block}table.grille tr{padding:.35rem 0;border-bottom:1px solid #e3e8ee}table.grille th,table.grille td{display:inline-block;border:0;padding:.15rem .9rem .15rem 0}table.grille tbody th{display:block;font-weight:600}table.grille .grille-m{display:inline;margin-left:.3rem}table.grille label.opt{justify-content:flex-start}}
 @media (max-width:30rem){.tete{gap:.6rem}.tete img{max-height:56px}table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
 CSS;
 }

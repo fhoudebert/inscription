@@ -4,7 +4,7 @@
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
-[Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
@@ -74,6 +74,7 @@ Réglages de la section `[formulaire]` :
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
 | `case`       | une case unique (accord, consentement RGPD…) | `oui` / `non` |
 | `echelle`    | note sur une ligne (1 à 5 par défaut, ou les valeurs de `options`), avec textes `gauche` / `droite` aux extrémités | la note choisie |
+| `grille`     | tableau de choix : une ligne par question (`lignes`), une colonne par réponse (`colonnes`), voir [Grille](#grille) | une colonne `<nom>_<ligne>` par ligne |
 | `commande`   | tableau des produits disponibles d'un `catalogue`, quantité par produit, total estimé (un seul par formulaire) | le détail lisible + une colonne `<nom>_total` |
 | `titre`      | intertitre de section (rien à saisir) | — (pas de colonne) |
 | `info`       | paragraphe d'information (rien à saisir) | — (pas de colonne) |
@@ -87,6 +88,8 @@ Réglages de la section `[formulaire]` :
 | `aide`        | petit texte d'aide sous la question |
 | `obligatoire` | `oui` = réponse exigée (pour `case` : la case doit être cochée) |
 | `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
+| `lignes`, `colonnes` | pour `grille` : questions (lignes) et réponses possibles (colonnes), séparées par `\|` |
+| `multiple`    | pour `grille` : `oui` = cases à cocher, plusieurs réponses par ligne |
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
@@ -110,6 +113,32 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 
 Un champ masqué n'est jamais obligatoire et n'est pas enregistré (colonne vide), même si une valeur
 est envoyée de force. Sans JavaScript, tous les champs s'affichent mais les mêmes règles s'appliquent à l'enregistrement.
+
+## Grille
+
+Une **grille** pose la même question pour plusieurs lignes (jours, ateliers…) dans un tableau, un bouton par case :
+
+```ini
+[vehiculer]
+type        = grille
+libelle     = "Si des convives ne sont pas véhiculés, êtes-vous disponible pour les véhiculer ?"
+lignes      = "Vendredi | Samedi | Dimanche"
+colonnes    = "Oui | Non"
+obligatoire = oui
+si          = "vehicule = Oui"
+```
+
+- **une réponse par ligne** (boutons radio) ; avec `multiple = oui`, des **cases à cocher** et plusieurs réponses par ligne
+  (ex. repas : déjeuner et dîner) ;
+- `obligatoire = oui` : **chaque ligne** doit avoir une réponse ; les lignes oubliées sont signalées en rouge ;
+- **fichier de réponses** : une colonne par ligne, nommée `<champ>_<ligne>` en minuscules sans accents ni espaces
+  (`vehiculer_vendredi`, `vehiculer_samedi`, `vehiculer_dimanche`), contenant la réponse (`Oui`), ou les réponses
+  séparées par `|` avec `multiple = oui`. Renommer une ligne change sa colonne (l'ancien fichier est alors archivé,
+  voir [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé)) ;
+- dans la notification par courriel et le message d'une commande (`{vehiculer}`), la grille est résumée « Vendredi : Oui », une ligne par jour ;
+- multilingue : `lignes_en`, `colonnes_en`, avec autant d'éléments que `lignes` et `colonnes` ;
+- sur téléphone, les lignes s'affichent l'une sous l'autre avec leurs réponses ;
+- une grille peut être conditionnelle (`si = …`), mais un autre champ ne peut pas encore dépendre de la réponse à une grille.
 
 ## Exemples
 
@@ -174,6 +203,7 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
+| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle) |
 
 ## Diffusion et lien de partage
 
@@ -350,6 +380,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `fichier` | `file` | | `exemple` | `placeholder` |
 | `ouverture` / `fermeture` | `opens` / `closes` | | `gauche` / `droite` | `left` / `right` |
 | `places` | `limit` | | `si` | `if` |
+| `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |

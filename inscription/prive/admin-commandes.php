@@ -111,7 +111,9 @@ function ins_cmd_message(array $form, array $cmd, array $rep): string
     $rempl = ['{numero}' => (string)($rep['numero'] ?? ''), '{date}' => ins_date_lisible((int)strtotime((string)($rep['date'] ?? 'now'))),
         '{detail}' => $detail, '{total}' => ins_prix(ins_cmd_total($cmd)), '{note}' => (string)($cmd['note'] ?? '')];
     foreach ($form['champs'] as $c) {
-        if ($c['type'] !== 'commande') {
+        if ($c['type'] === 'grille') {
+            $rempl['{' . $c['nom'] . '}'] = ins_resume_grille($f['champs'][$c['nom']], $rep);
+        } elseif ($c['type'] !== 'commande') {
             $rempl['{' . $c['nom'] . '}'] = (string)($rep[$c['nom']] ?? '');
         }
     }
