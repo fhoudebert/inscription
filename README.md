@@ -85,7 +85,8 @@ Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète)
 `colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe),
 `panier.ini` (commande du panier de la semaine d'un maraîcher, sur le catalogue fictif `legumes`),
 `rencontre.ini` (grilles de choix : présence, repas, covoiturage sur trois jours),
-`frais.ini` (montants et heures : remboursement de frais de déplacement).
+`frais.ini` (montants et heures : remboursement de frais de déplacement),
+`spectacle.ini` (réservation de places avec prix total calculé).
 Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
 
 ## Données personnelles

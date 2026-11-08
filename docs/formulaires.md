@@ -4,7 +4,7 @@
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
-[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Liens](#liens) · [Courriel de confirmation](#courriel-de-confirmation) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Total calculé](#total-calculé) · [Liens](#liens) · [Courriel de confirmation](#courriel-de-confirmation) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
@@ -73,6 +73,7 @@ Réglages de la section `[formulaire]` :
 | `date`       | calendrier (bornes `min` / `max` au format `AAAA-MM-JJ`) | `AAAA-MM-JJ` |
 | `montant`    | somme d'argent : le symbole de `devise` (config.php) s'affiche après la zone ; accepte `12`, `12,5`, `12.50`, `1 250,00 €` ; jamais négatif sauf `min` négatif | le montant à deux décimales (`12,50`) |
 | `heure`      | sélecteur d'heure ; accepte aussi `9h`, `9h05`, `14:30` ; `min` / `max` = plage horaire (`06:00`, `23:30`) | l'heure `HH:MM` |
+| `total`      | montant **calculé** à partir de champs nombre / montant (`calcul = "adultes * 15 + enfants * 8"`), affiché en direct, voir [Total calculé](#total-calculé) | le total (`54,00`) |
 | `choix`      | boutons radio : une seule réponse parmi `options` | la réponse choisie |
 | `liste`      | liste déroulante : une réponse parmi `options` | la réponse choisie |
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
@@ -206,6 +207,38 @@ min      = 0
 - notification et confirmation : « Samedi midi : Végétarien 2, Classique 3 » ;
 - sur téléphone, chaque ligne s'affiche avec ses zones et le nom de leur colonne.
 
+## Total calculé
+
+Un champ `total` calcule un prix à partir des quantités saisies :
+
+```ini
+[adultes]
+type    = nombre
+libelle = "Nombre de places adultes"
+entier  = oui
+min     = 1
+
+[enfants]
+type    = nombre
+libelle = "Nombre de places enfants"
+entier  = oui
+min     = 0
+
+[total]
+type    = total
+libelle = "Prix total"
+calcul  = "adultes * 15 + enfants * 8"
+```
+
+- `calcul` : termes `champ * prix unitaire` (ou `prix * champ`, ou `champ` seul) séparés par `+` ou `-` ; un nombre seul
+  ajoute des frais fixes (`+ 2,50`) ; virgule ou point ;
+- les champs cités sont des `nombre`, `montant` ou `total` **décrits avant** ; un champ vide, illisible ou masqué compte pour 0 ;
+- le total s'affiche en grand, avec la devise, et se met à jour pendant la saisie ; il est **recalculé par le serveur** à
+  l'envoi (une valeur modifiée dans le navigateur est ignorée) puis enregistré dans le fichier de réponses ;
+- il figure dans la notification et le courriel de confirmation (« Prix total : 54,00 € ») ;
+- il peut servir de condition : `si = "total >= 100"` ;
+- pour un vrai bon de commande (catalogue de produits, préparation, prix définitif), voir le type `commande`.
+
 ## Liens
 
 Les textes affichés peuvent contenir des liens, dans `intro`, `merci`, `aide`, le `libelle` d'un `info` et celui d'une `case` :
@@ -308,6 +341,7 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
+| `spectacle.ini` | réservation de places de spectacle : date (plage de dates), places adultes / enfants, prix total calculé, info conditionnelle sur le total, confirmation |
 | `frais.ini` | remboursement de frais : heures de départ et de retour (plage horaire), montants (avec maximum), infos conditionnelles (`depart < 07:00`, `transport > 100`) |
 | `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle), liens, courriel de confirmation |
 
@@ -489,7 +523,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `confirmation` | `confirm` | | | |
-| `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure` | `phone`, `number`, `amount`, `time` |
+| `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure`, `total` | `phone`, `number`, `amount`, `time`, `sum` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |

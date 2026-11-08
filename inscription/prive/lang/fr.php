@@ -588,4 +588,10 @@ return [
     'edi_saisie_texte'     => 'Texte court à saisir',
     'edi_colonnes_saisie'  => 'Colonnes (une par ligne, facultatif)',
     'edi_colonnes_saisie_aide' => 'Sans colonne ou avec une seule : une zone par ligne, colonne <nom>_<ligne> du fichier. Avec plusieurs : une zone par case, colonne <nom>_<ligne>_<colonne>.',
+    'type_total'           => 'Total calculé (prix)',
+    'err_calcul_vide'      => '{f} : [{nom}] un total a besoin d\'un calcul, par exemple calcul = "adultes * 15 + enfants * 8"',
+    'err_calcul'           => '{f} : [{nom}] calcul : « {terme} » incompris ; écrire des termes « champ * prix » séparés par + ou -, par exemple adultes * 15 + enfants * 8',
+    'err_calcul_champ'     => '{f} : [{nom}] calcul : [{champ}] doit être un champ nombre, montant ou total décrit avant',
+    'edi_calcul'           => 'Calcul',
+    'edi_calcul_aide'      => 'Termes « champ * prix unitaire » séparés par + ou - (un nombre seul = frais fixes). Champs utilisables : {champs}. Le total est recalculé à l\'envoi.',
 ];

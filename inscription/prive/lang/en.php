@@ -588,4 +588,10 @@ return [
     'edi_saisie_texte'     => 'Short text to enter',
     'edi_colonnes_saisie'  => 'Columns (one per line, optional)',
     'edi_colonnes_saisie_aide' => 'No column or a single one: one box per row, file column <name>_<row>. Several: one box per cell, column <name>_<row>_<column>.',
+    'type_total'           => 'Calculated total (price)',
+    'err_calcul_vide'      => '{f}: [{nom}] a total needs a calculation, e.g. calcul = "adults * 15 + children * 8"',
+    'err_calcul'           => '{f}: [{nom}] calculation: "{terme}" not understood; write "field * price" terms separated by + or -, e.g. adults * 15 + children * 8',
+    'err_calcul_champ'     => '{f}: [{nom}] calculation: [{champ}] must be a number, amount or total field described before',
+    'edi_calcul'           => 'Calculation',
+    'edi_calcul_aide'      => '"field * unit price" terms separated by + or - (a number alone = fixed fee). Usable fields: {champs}. The total is recalculated on submission.',
 ];

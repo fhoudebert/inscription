@@ -28,7 +28,7 @@ const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => '
 const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'montant', 'date', 'heure',
-    'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'titre', 'info',
+    'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'total', 'titre', 'info',
 ];
 // Catalogues de produits (prive/catalogues/<nom>.csv) pour les champs « commande »
 const INS_COLONNES_CATALOGUE = ['id', 'categorie', 'produit', 'unite', 'prix', 'pas', 'disponible'];
@@ -43,6 +43,7 @@ const INS_ALIAS_TYPES = [
     'mail' => 'email', 'courriel' => 'email', 'tel' => 'telephone', 'téléphone' => 'telephone', 'phone' => 'telephone',
     'amount' => 'montant', 'money' => 'montant', 'prix' => 'montant', 'somme' => 'montant',
     'time' => 'heure', 'hour' => 'heure', 'horaire' => 'heure',
+    'calcul' => 'total', 'calculation' => 'total', 'sum' => 'total',
     'number' => 'nombre', 'radio' => 'choix', 'choice' => 'choix', 'select' => 'liste', 'list' => 'liste',
     'dropdown' => 'liste', 'checkbox' => 'cases', 'checkboxes' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'consent' => 'case',
@@ -67,6 +68,7 @@ const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
     'obligatoire' => ['obligatoire', 'required'], 'options' => ['options', 'colonnes', 'columns'], 'defaut' => ['defaut', 'default'],
     'lignes' => ['lignes', 'rows'], 'multiple' => ['multiple'], 'saisie' => ['saisie', 'cellule', 'input', 'cell'],
+    'calcul' => ['calcul', 'formule', 'formula', 'calculation'],
     'min' => ['min', 'minimum'], 'max' => ['max', 'maximum'], 'entier' => ['entier', 'integer'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
     'catalogue' => ['catalogue', 'catalog'],
@@ -603,6 +605,8 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'max'         => $max !== '' ? $max : null,
             'entier'      => ($type === 'nombre' || $saisie === 'nombre') && ins_oui($lc('entier')), // nombre entier seulement
             'saisie'      => $saisie,   // grille : '' = choix ; nombre, montant ou texte = case à remplir
+            'calcul'      => $type === 'total' ? trim((string)$lc('calcul')) : '',
+            'termes'      => $type === 'total' ? ins_calcul((string)$lc('calcul'), $vus, $f, $nom) : [], // total : [champ, coefficient]
             'colonnes_id' => [],
             'unique'      => ins_oui($lc('unique')),
             'exemple'     => trim((string)$lc('exemple')),
@@ -867,7 +871,7 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         $op = $m[2];
         $comparaison = !in_array($op, ['=', '!='], true);
         // Comparaison de nombres ou de dates : champ nombre, date, ou échelle dont les notes sont des nombres
-        $num = in_array($c['type'], ['nombre', 'montant', 'date', 'heure'], true) || ($c['type'] === 'echelle' && $comparaison);
+        $num = in_array($c['type'], ['nombre', 'montant', 'total', 'date', 'heure'], true) || ($c['type'] === 'echelle' && $comparaison);
         if ($comparaison && !$num) {
             throw new RuntimeException(t('err_condition_comparaison', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'op' => $op]));
         }
@@ -902,10 +906,62 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
     return $res;
 }
 
+/**
+ * Calcul d'un champ « total » : somme de termes séparés par + ou -, chacun « champ * prix », « prix * champ »,
+ * « champ » ou un nombre seul (frais fixes). Les champs cités sont des nombres, montants ou totaux décrits avant.
+ * Exemple : calcul = "adultes * 15 + enfants * 8 + 2,50"
+ * @return array<int, array{champ: ?string, coef: float}>
+ */
+function ins_calcul(string $expr, array $vus, string $f, string $nom): array
+{
+    $expr = trim($expr);
+    if ($expr === '') {
+        throw new RuntimeException(t('err_calcul_vide', ['f' => $f, 'nom' => $nom]));
+    }
+    if (!preg_match('/^[+-]?[^+-]+([+-][^+-]+)*$/', $expr)) {
+        throw new RuntimeException(t('err_calcul', ['f' => $f, 'nom' => $nom, 'terme' => $expr]));
+    }
+    preg_match_all('/([+-]?)\s*([^+-]+)/', $expr, $ms, PREG_SET_ORDER);
+    $nb = '(\d+(?:[.,]\d+)?)';
+    $termes = [];
+    foreach ($ms as $m) {
+        $signe = $m[1] === '-' ? -1.0 : 1.0;
+        $t = trim($m[2]);
+        if (preg_match('/^' . $nb . '$/', $t, $x)) {
+            $termes[] = ['champ' => null, 'coef' => $signe * (float)str_replace(',', '.', $x[1])];
+            continue;
+        }
+        if (!preg_match('/^(?:' . $nb . '\s*\*\s*)?([a-z][a-z0-9_]*)(?:\s*\*\s*' . $nb . ')?$/i', $t, $x)) {
+            throw new RuntimeException(t('err_calcul', ['f' => $f, 'nom' => $nom, 'terme' => $t]));
+        }
+        $champ = $x[2];
+        if (!isset($vus[$champ]) || !in_array($vus[$champ]['type'], ['nombre', 'montant', 'total'], true)) {
+            throw new RuntimeException(t('err_calcul_champ', ['f' => $f, 'nom' => $nom, 'champ' => $champ]));
+        }
+        if ($x[1] !== '' && ($x[3] ?? '') !== '') {
+            throw new RuntimeException(t('err_calcul', ['f' => $f, 'nom' => $nom, 'terme' => $t]));
+        }
+        $coef = $x[1] !== '' ? $x[1] : (($x[3] ?? '') !== '' ? $x[3] : '1');
+        $termes[] = ['champ' => $champ, 'coef' => $signe * (float)str_replace(',', '.', $coef)];
+    }
+    return $termes;
+}
+
+/** Valeur d'un total : somme des termes ; un champ vide, illisible ou masqué compte pour 0. */
+function ins_valeur_total(array $c, array $valeurs): float
+{
+    $total = 0.0;
+    foreach ($c['termes'] as $t) {
+        $x = $t['champ'] === null ? 1.0 : (ins_valeur_comparable('nombre', (string)($valeurs[$t['champ']] ?? '')) ?? 0.0);
+        $total += $x * $t['coef'];
+    }
+    return round($total, 2);
+}
+
 /** Genre de comparaison d'un type de champ : nombre, date, heure ; '' si non comparable. */
 function ins_genre_comparable(string $type): string
 {
-    return ['nombre' => 'nombre', 'montant' => 'nombre', 'echelle' => 'nombre', 'date' => 'date', 'heure' => 'heure'][$type] ?? '';
+    return ['nombre' => 'nombre', 'montant' => 'nombre', 'total' => 'nombre', 'echelle' => 'nombre', 'date' => 'date', 'heure' => 'heure'][$type] ?? '';
 }
 
 /** Heure saisie (9:05, 09h05, 9h, 14 h 30) → 09:05 ; null si illisible. */
@@ -1300,6 +1356,10 @@ function ins_valider(array $form, array $post): array
                 break;
             case 'cases':
                 $v = implode(' | ', ins_choisis($c, $b));
+                break;
+            case 'total':
+                // Recalculé par le serveur : la valeur envoyée par le navigateur est ignorée
+                $v = ins_nombre_csv(ins_valeur_total($c, $valeurs));
                 break;
             case 'grille':
                 $b = is_array($b) ? $b : [];
@@ -2123,7 +2183,7 @@ function ins_libelle_mail(string $libelle): string
 /** Valeur enregistrée (langue de base) affichée dans la langue du formulaire : options traduites. */
 function ins_valeur_affichee(array $c, string $v): string
 {
-    if ($v !== '' && $c['type'] === 'montant') {
+    if ($v !== '' && in_array($c['type'], ['montant', 'total'], true)) {
         return $v . ' ' . ins_config()['devise'];
     }
     if ($v === '' || empty($c['options']) || !in_array($c['type'], ['choix', 'liste', 'cases', 'echelle'], true)) {
@@ -2742,6 +2802,10 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             $h .= ins_rendu_commande($c, $q, $erreurs[$nom] ?? '', $si);
             continue;
         }
+        if ($c['type'] === 'total') {
+            $h .= ins_rendu_total($c, $si, $premier && $reponseExistante !== null ? (string)($reponseExistante[$nom] ?? '') : '');
+            continue;
+        }
         if ($c['type'] === 'grille') {
             $h .= ins_rendu_grille($c, $premier ? ($reponseExistante ?? []) : null, is_array($brut[$nom] ?? null) ? $brut[$nom] : [], $erreurs[$nom] ?? '', $si);
             continue;
@@ -2897,6 +2961,60 @@ function ins_rendu_grille(array $c, ?array $existante, array $saisie, string $er
     return $h . '</div>';
 }
 
+/** Champ « total » : montant calculé en direct (script) et recalculé par le serveur à l'envoi. */
+function ins_rendu_total(array $c, string $si, string $existant): string
+{
+    $idh = 'c_' . $c['nom'];
+    $calc = ['termes' => $c['termes'], 'decimale' => t('decimale')];
+    $h = '<div class="champ total" data-nom="' . e($c['nom']) . '" data-type="total"' . $si
+        . ' data-calcul="' . e(json_encode($calc, JSON_UNESCAPED_UNICODE)) . '">'
+        . '<div class="lib" id="' . $idh . '_l">' . e($c['libelle']) . '</div>';
+    if ($c['aide'] !== '') {
+        $h .= '<div class="aide">' . ins_texte($c['aide']) . '</div>';
+    }
+    $val = $existant !== '' ? $existant : '0' . t('decimale') . '00';
+    return $h . '<div class="valeur-total"><output id="' . $idh . '" aria-labelledby="' . $idh . '_l" aria-live="polite">' . e($val) . '</output> '
+        . e((string)ins_config()['devise']) . '</div><input type="hidden" name="' . e($c['nom']) . '" value="' . e($val) . '"></div>'
+        . ins_script_total();
+}
+
+/** Script des totaux : recalcule chaque champ « total » à chaque saisie (une seule fois par page). */
+function ins_script_total(): string
+{
+    static $fait = false;
+    if ($fait) {
+        return '';
+    }
+    $fait = true;
+    return <<<'JS'
+<script>
+(function () {
+  var form = document.currentScript.closest('form') || document;
+  function nombre(nom) {
+    var bloc = form.querySelector('.champ[data-nom="' + nom + '"]');
+    if (!bloc || bloc.classList.contains('cache')) return 0; // champ masqué : 0
+    var el = bloc.querySelector('input[name="' + nom + '"]');
+    var v = el ? el.value.replace(/[\s  €]/g, '').replace(',', '.') : '';
+    return /^-?\d+(\.\d+)?$/.test(v) ? parseFloat(v) : 0;
+  }
+  function calculer() {
+    form.querySelectorAll('.champ[data-type=total]').forEach(function (bloc) {
+      var d = JSON.parse(bloc.getAttribute('data-calcul')), t = 0;
+      d.termes.forEach(function (x) { t += (x.champ === null ? 1 : nombre(x.champ)) * x.coef; });
+      var txt = (Math.round(t * 100) / 100).toFixed(2).replace('.', d.decimale);
+      bloc.querySelector('output').textContent = txt;
+      bloc.querySelector('input[type=hidden]').value = txt;
+    });
+  }
+  form.addEventListener('input', calculer);
+  form.addEventListener('change', calculer);
+  calculer();
+  setTimeout(calculer, 0); // après l'affichage conditionnel
+})();
+</script>
+JS;
+}
+
 /** Corps d'une grille de saisie : une zone (nombre, montant, texte) par case ; cases invalides signalées. */
 function ins_rendu_grille_saisie(array $c, ?array $existante, array $saisie, string $err): string
 {
@@ -3033,6 +3151,7 @@ const INS_PROPRIETES_TYPE = [
     'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
+    'total'      => ['aide', 'calcul'],
     'grille'     => ['aide', 'obligatoire', 'saisie', 'lignes', 'options', 'multiple', 'min', 'max', 'entier'],
     'case'       => ['aide', 'obligatoire', 'defaut'],
     'commande'   => ['aide', 'obligatoire', 'catalogue'],
@@ -3064,7 +3183,7 @@ function ins_modele(array $form): array
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'], 'entier' => (bool)$c['entier'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
-            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'], 'saisie' => $c['saisie'],
+            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'], 'saisie' => $c['saisie'], 'calcul' => $c['calcul'],
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'si_ou' => (bool)$c['si_ou'],
             'trad' => (object)$c['trad'],
@@ -3236,6 +3355,9 @@ function ins_modele_vers_ini(string $id, array $m): string
                 throw new RuntimeException(t('err_catalogue_cle', ['f' => "$id.ini", 'nom' => $nom]));
             }
             $ecrire($l, 'catalogue', $cat);
+        }
+        if (in_array('calcul', $props, true)) {
+            $ecrire($l, 'calcul', ins_modele_texte($c['calcul'] ?? ''));
         }
         if (in_array('saisie', $props, true)) {
             $sa = ins_modele_texte($c['saisie'] ?? '');
@@ -3450,6 +3572,7 @@ td.actions button{width:100%;white-space:nowrap}
 .saisie-montant{display:inline-flex;align-items:center;gap:.4rem;max-width:100%}
 .saisie-montant input{width:10rem;text-align:right}
 .champ input[type=time]{width:auto;min-width:9rem}
+.champ.total .valeur-total{font-size:1.4rem;font-weight:700;margin-top:.2rem}
 table.grille{width:auto;max-width:100%;background:transparent;font-size:inherit;margin:.3rem 0}
 table.grille th,table.grille td{position:static;background:transparent;border:0;border-bottom:1px solid #e3e8ee;padding:.35rem .7rem;text-align:center;font-weight:normal}
 table.grille thead th{font-weight:600;font-size:.9rem}

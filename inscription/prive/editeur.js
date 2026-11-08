@@ -61,7 +61,7 @@
   }
   var DECORATIFS = ['titre', 'info'];
   var A_OPTIONS = ['choix', 'liste', 'cases', 'echelle'];
-  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'montant', 'date', 'heure'];
+  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'montant', 'total', 'date', 'heure'];
   var COMPARAISONS = ['<', '<=', '>', '>='];
 
   /* ---------- État ---------- */
@@ -578,6 +578,15 @@
         dessinerListe(); dessinerProps();
       }));
     }
+    if (p.indexOf('calcul') >= 0) {
+      // Champs utilisables : nombres, montants et totaux placés avant ce champ
+      var avant = [];
+      for (var i = 0; i < S.modele.champs.length && S.modele.champs[i] !== c; i++) {
+        if (['nombre', 'montant', 'total'].indexOf(S.modele.champs[i].type) >= 0) avant.push(S.modele.champs[i].nom);
+      }
+      props.appendChild(texte(c, 'calcul', { libelle: T('edi_calcul'), placeholder: avant.length > 1 ? avant[0] + ' * 15 + ' + avant[1] + ' * 8' : 'adultes * 15 + enfants * 8',
+        aide: T('edi_calcul_aide', { champs: avant.length ? avant.join(', ') : '—' }) }));
+    }
     if (p.indexOf('saisie') >= 0) {
       props.appendChild(choixListe(c, 'saisie', [['', T('edi_saisie_choix')], ['nombre', T('edi_saisie_nombre')],
         ['montant', T('edi_saisie_montant')], ['texte', T('edi_saisie_texte')]], T('edi_saisie'), dessinerProps));
@@ -682,7 +691,7 @@
       sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; k.op = '='; k.egal = true; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
       // Opérateurs : « est parmi / n'est pas parmi » pour les choix ; =, ≠, <, ≤, >, ≥ pour les nombres et les dates
       var typeC = cible ? cible.type : '';
-      var numerique = ['nombre', 'montant', 'date', 'heure'].indexOf(typeC) >= 0;
+      var numerique = ['nombre', 'montant', 'total', 'date', 'heure'].indexOf(typeC) >= 0;
       var opsComp = [['<', T('edi_cond_inf')], ['<=', T('edi_cond_inf_egal')], ['>', T('edi_cond_sup')], ['>=', T('edi_cond_sup_egal')]];
       var ops = numerique ? [['=', T('edi_cond_egal')], ['!=', T('edi_cond_different')]].concat(opsComp)
         : [['est', T('edi_cond_est')], ['nest', T('edi_cond_nest_pas')]].concat(typeC === 'echelle' ? opsComp : []);
