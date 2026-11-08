@@ -21,7 +21,7 @@ const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage te
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
-const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte'];
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte', 'confirmation_texte'];
 // Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
 const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
 const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
@@ -54,6 +54,7 @@ const INS_CLES_FORMULAIRE = [
     'titre' => ['titre', 'title'], 'intro' => ['intro', 'introduction'], 'merci' => ['merci', 'thanks'],
     'bouton' => ['bouton', 'button'], 'fichier' => ['fichier', 'file'], 'message' => ['message'],
     'logo' => ['logo'], 'logo_texte' => ['logo_texte', 'logo_text', 'logo_alt'],
+    'confirmation' => ['confirmation', 'confirm'], 'confirmation_texte' => ['confirmation_texte', 'confirmation_text'],
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
@@ -91,6 +92,9 @@ function ins_config(): array
             'expediteur'          => '',
             'debug'               => false,
             'devise'              => '€',
+            'conditions_ou'       => false,
+            'confirmation'        => true,
+            'confirmation_max_heure' => 30,
             'logo'                => '',
             'logo_texte'          => '',
         ];
@@ -287,6 +291,37 @@ function ins_cle_trad(array $tab, array $noms, string $langue): ?string
     return null;
 }
 
+/**
+ * Texte affiché avec liens : [texte du lien](https://…) ou adresse nue https://… ; mailto: accepté.
+ * Tout le reste est échappé ; les liens s'ouvrent dans un nouvel onglet. Retours à la ligne conservés.
+ */
+function ins_texte(string $s): string
+{
+    $motif = '~\[([^\[\]\n]{1,200})\]\(\s*((?:https?://|mailto:)[^\s()<>"]+)\s*\)|\bhttps?://[^\s<>"]+~i';
+    $h = '';
+    $pos = 0;
+    preg_match_all($motif, $s, $ms, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+    foreach ($ms as $m) {
+        $h .= e(substr($s, $pos, $m[0][1] - $pos));
+        $pos = $m[0][1] + strlen($m[0][0]);
+        if (isset($m[2])) {
+            [$texte, $url] = [$m[1][0], $m[2][0]];
+        } else {
+            $url = rtrim($m[0][0], '.,;:!?)»');            // ponctuation finale : hors du lien
+            $pos -= strlen($m[0][0]) - strlen($url);
+            $texte = $url;
+        }
+        $h .= '<a href="' . e($url) . '" target="_blank" rel="noopener noreferrer">' . e($texte) . '</a>';
+    }
+    return nl2br($h . e(substr($s, $pos)));
+}
+
+/** Même texte pour un courriel (texte brut) : [texte](adresse) → « texte (adresse) ». */
+function ins_texte_brut(string $s): string
+{
+    return (string)preg_replace('~\[([^\[\]\n]{1,200})\]\(\s*((?:https?://|mailto:)[^\s()<>"]+)\s*\)~i', '$1 ($2)', $s);
+}
+
 function ins_liste_options(string $v): array
 {
     return array_values(array_filter(array_map('trim', explode('|', $v)), 'strlen'));
@@ -430,6 +465,9 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'message'         => trim((string)$lit('message')), // message de commande (vide = texte par défaut)
         'logo'            => trim((string)$lit('logo')),    // image de prive/images/ ; vide = logo du site ; « non » = aucun
         'logo_texte'      => trim((string)$lit('logo_texte')),
+        'confirmation'    => trim((string)$lit('confirmation')),       // « oui » ou nom du champ e-mail du répondant
+        'confirmation_texte' => trim((string)$lit('confirmation_texte')),
+        'confirmation_champ' => '',
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
@@ -526,6 +564,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'gauche'      => trim((string)$lc('gauche')),
             'droite'      => trim((string)$lc('droite')),
             'si'          => [],
+            'si_ou'       => false, // vrai : au moins une condition (||) ; faux : toutes (&)
             'trad'        => [],
             'catalogue'   => '',
             'lignes'      => $lignes,   // grille : libellés des lignes (traduisibles)
@@ -566,6 +605,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         }
         if (trim((string)$lc('si')) !== '') {
             $champ['si'] = ins_conditions((string)$lc('si'), $vus, $f, $nom);
+            $champ['si_ou'] = strpos((string)$lc('si'), '||') !== false;
         }
         $form['champs'][$nom] = $champ;
         if (!in_array($type, INS_TYPES_DECORATIFS, true)) {
@@ -579,6 +619,19 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         if ($c['type'] === 'commande' && isset($form['champs'][$c['nom'] . '_total'])) {
             throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $c['nom'] . '_total']));
         }
+    }
+    // Courriel de confirmation au répondant : vers le champ e-mail désigné, ou le premier champ e-mail
+    $conf = $form['confirmation'];
+    if (in_array(ins_minuscules($conf), ['', 'non', 'no', 'false', '0'], true)) {
+        $form['confirmation'] = '';
+    } else {
+        $champsMail = array_keys(array_filter($form['champs'], function ($c) { return $c['type'] === 'email'; }));
+        $cible = ins_oui($conf) ? ($champsMail[0] ?? '') : $conf;
+        if (!in_array($cible, $champsMail, true)) {
+            throw new RuntimeException(t('err_confirmation', ['f' => $f, 'champ' => ins_oui($conf) ? '' : $conf]));
+        }
+        $form['confirmation'] = ins_oui($conf) ? 'oui' : $conf;
+        $form['confirmation_champ'] = $cible;
     }
     // Colonnes en double (une ligne de grille « vehiculer_samedi » et un champ du même nom…)
     $doubles = array_keys(array_filter(array_count_values(ins_colonnes($form + ['acces' => ''])), function ($n) { return $n > 1; }));
@@ -662,7 +715,15 @@ function ins_guillemets_impairs(string $s): bool
 function ins_conditions(string $expr, array $connus, string $f, string $nom): array
 {
     $res = [];
-    foreach (explode('&', $expr) as $morceau) {
+    // ET (&) ou OU (||), sans mélange ; le OU s'active dans config.php (conditions_ou)
+    $ou = strpos($expr, '||') !== false;
+    if ($ou && strpos($expr, '&') !== false) {
+        throw new RuntimeException(t('err_condition_mixte', ['f' => $f, 'nom' => $nom]));
+    }
+    if ($ou && !ins_config()['conditions_ou']) {
+        throw new RuntimeException(t('err_condition_ou', ['f' => $f, 'nom' => $nom]));
+    }
+    foreach (explode($ou ? '||' : '&', $expr) as $morceau) {
         $morceau = trim($morceau);
         if ($morceau === '') {
             continue;
@@ -996,35 +1057,45 @@ function ins_valeur_case(bool $cochee, string $langue): string
 
 function ins_visible(array $c, array $valeurs, array $visibles, array $champs, string $langue): bool
 {
+    if (!$c['si']) {
+        return true;
+    }
     foreach ($c['si'] as $cond) {
-        $cible = $cond['champ'];
-        if (empty($visibles[$cible])) {
-            return false; // dépend d'un champ lui-même masqué
+        $vraie = ins_condition_vraie($cond, $valeurs, $visibles, $champs, $langue);
+        if ($vraie && $c['si_ou']) {
+            return true;  // OU : une condition suffit
         }
-        $v = $valeurs[$cible] ?? '';
-        if (!empty($cond['num'])) {
-            if (!ins_comparer($cond, (string)$v)) {
-                return false;
-            }
-            continue;
-        }
-        if ($champs[$cible]['type'] === 'case') {
-            $choisis = [$v === ins_valeur_case(true, $langue) ? '1' : '0'];
-        } else {
-            $choisis = $v === '' ? [] : array_map('ins_minuscules', array_map('trim', explode('|', $v)));
-        }
-        $trouve = false;
-        foreach ($cond['valeurs'] as $attendu) {
-            if (in_array(ins_minuscules($attendu), $choisis, true)) {
-                $trouve = true;
-                break;
-            }
-        }
-        if ($trouve !== $cond['egal']) {
-            return false;
+        if (!$vraie && !$c['si_ou']) {
+            return false; // ET : une condition fausse suffit
         }
     }
-    return true;
+    return !$c['si_ou'];
+}
+
+/** Une condition « si » : fausse si le champ visé est lui-même masqué. */
+function ins_condition_vraie(array $cond, array $valeurs, array $visibles, array $champs, string $langue): bool
+{
+    $cible = $cond['champ'];
+    if (empty($visibles[$cible])) {
+        return false;
+    }
+    $v = $valeurs[$cible] ?? '';
+    if (!empty($cond['num'])) {
+        return ins_comparer($cond, (string)$v);
+    }
+    if ($champs[$cible]['type'] === 'case') {
+        $choisis = [$v === ins_valeur_case(true, $langue) ? '1' : '0'];
+    } else {
+        $choisis = $v === '' ? [] : array_map('ins_minuscules', array_map('trim', explode('|', $v)));
+    }
+    $trouve = false;
+    foreach ($cond['valeurs'] as $attendu) {
+        if (in_array(ins_minuscules($attendu), $choisis, true)) {
+            $trouve = true;
+            break;
+        }
+    }
+    return $trouve === $cond['egal'];
 }
 
 /**
@@ -1748,7 +1819,7 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
     foreach ($form['champs'] as $nom => $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
             $v = $c['type'] === 'grille' ? ins_resume_grille($c, $valeurs) : ($valeurs[$nom] ?? '');
-            $corps .= $c['libelle'] . ' : ' . (in_array($c['type'], ['commande', 'grille'], true) ? "\n" : '') . $v . "\n";
+            $corps .= ins_libelle_mail($c['libelle']) . (in_array($c['type'], ['commande', 'grille'], true) ? "\n" : ' ') . $v . "\n";
         }
     }
     if (isset($valeurs['__commande'])) {
@@ -1761,6 +1832,109 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
     }
     $sujet = '=?UTF-8?B?' . base64_encode(t('mail_sujet', ['titre' => $form['titre']])) . '?=';
     @mail(implode(',', $dest), $sujet, $corps, $entetes);
+}
+
+/**
+ * Courriel de confirmation au répondant (clé « confirmation » du formulaire, si config.php le permet) :
+ * dans la langue du répondant, avec le récapitulatif de sa réponse. Garde-fous contre l'envoi de courriels
+ * à des tiers par des robots : au plus un message par adresse et par formulaire toutes les 10 minutes,
+ * et au plus « confirmation_max_heure » messages par heure pour tout le site.
+ * @return bool vrai si le message a été confié au serveur de courrier
+ */
+function ins_confirmer(array $form, string $numero, array $valeurs, bool $modification): bool
+{
+    $cfg = ins_config();
+    if (!$cfg['confirmation'] || $form['confirmation_champ'] === '' || !function_exists('mail')) {
+        return false;
+    }
+    $dest = trim((string)($valeurs[$form['confirmation_champ']] ?? ''));
+    if (!filter_var($dest, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n,;]/', $dest)) {
+        return false;
+    }
+    if (!ins_quota_confirmation($form['id'] . '|' . ins_minuscules($dest), (int)$cfg['confirmation_max_heure'])) {
+        error_log('inscription : courriel de confirmation non envoyé (limite atteinte) pour ' . $form['id']);
+        return false;
+    }
+    $intro = $form['confirmation_texte'] !== '' ? $form['confirmation_texte'] : ($form['merci'] !== '' ? $form['merci'] : t('merci_defaut'));
+    $corps = ins_texte_brut($intro) . "\n\n";
+    if ($form['afficher_numero']) {
+        $corps .= t('numero_reponse') . ' ' . $numero . "\n\n";
+    }
+    $corps .= t($modification ? 'conf_recap_modif' : 'conf_recap', ['titre' => $form['titre']]) . "\n\n";
+    foreach ($form['champs'] as $nom => $c) {
+        if (in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
+            continue;
+        }
+        if ($c['type'] === 'grille') {
+            $v = ins_resume_grille($c, $valeurs);
+        } elseif ($c['type'] === 'case') {
+            $v = ($valeurs[$nom] ?? '') === ins_valeur_case(true, $form['langue']) ? t('val_oui') : t('val_non');
+        } else {
+            $v = ins_valeur_affichee($c, (string)($valeurs[$nom] ?? ''));
+        }
+        if ($v === '') {
+            continue;
+        }
+        $corps .= ins_libelle_mail($c['libelle']) . (in_array($c['type'], ['commande', 'grille', 'texte_long'], true) ? "\n" : ' ') . $v . "\n";
+    }
+    if (isset($valeurs['__commande'])) {
+        $corps .= t('cmd_total_estime') . ' : ' . ins_prix((float)$valeurs['__commande']['total']) . "\n";
+    }
+    $corps .= "\n-- \n" . t('conf_pied') . "\n";
+    $entetes = "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n";
+    $exp = (string)$cfg['expediteur'];
+    if ($exp !== '' && filter_var($exp, FILTER_VALIDATE_EMAIL)) {
+        $entetes .= "From: $exp\r\n";
+    }
+    // Réponse au message : vers l'organisateur (première adresse de « notifier »)
+    $orga = trim(explode(',', $form['notifier'])[0] ?? '');
+    if ($orga !== '' && filter_var($orga, FILTER_VALIDATE_EMAIL)) {
+        $entetes .= "Reply-To: $orga\r\n";
+    }
+    $sujet = '=?UTF-8?B?' . base64_encode(t($modification ? 'conf_sujet_modif' : 'conf_sujet', ['titre' => $form['titre']])) . '?=';
+    return @mail($dest, $sujet, $corps, $entetes);
+}
+
+/** Libellé suivi de « : » dans un courriel (sans doubler un « ? » ou « : » final). */
+function ins_libelle_mail(string $libelle): string
+{
+    $l = rtrim(ins_texte_brut($libelle));
+    return preg_match('/[?:!]$/u', $l) ? $l : $l . ' :';
+}
+
+/** Valeur enregistrée (langue de base) affichée dans la langue du formulaire : options traduites. */
+function ins_valeur_affichee(array $c, string $v): string
+{
+    if ($v === '' || empty($c['options']) || !in_array($c['type'], ['choix', 'liste', 'cases', 'echelle'], true)) {
+        return $v;
+    }
+    return implode(' | ', array_map(function ($x) use ($c) {
+        $i = array_search($x, $c['options'], true);
+        return $i === false ? $x : (string)($c['options_aff'][$i] ?? $x);
+    }, array_map('trim', explode('|', $v))));
+}
+
+/** Limites d'envoi des confirmations (fichier donnees/.confirmations.json). Vrai si l'envoi est permis (et compté). */
+function ins_quota_confirmation(string $cle, int $maxHeure): bool
+{
+    $f = ins_dossier_donnees() . '/.confirmations.json';
+    $verrou = ins_verrouiller();
+    try {
+        $now = time();
+        $j = is_file($f) ? json_decode((string)file_get_contents($f), true) : null;
+        $envois = array_filter(is_array($j['envois'] ?? null) ? $j['envois'] : [], function ($t) use ($now) { return is_int($t) && $t > $now - 3600; });
+        $derniers = array_filter(is_array($j['derniers'] ?? null) ? $j['derniers'] : [], function ($t) use ($now) { return is_int($t) && $t > $now - 600; });
+        $h = substr(sha1($cle), 0, 16); // adresse jamais conservée en clair
+        if (isset($derniers[$h]) || ($maxHeure > 0 && count($envois) >= $maxHeure)) {
+            return false;
+        }
+        $envois[] = $now;
+        $derniers[$h] = $now;
+        @file_put_contents($f, json_encode(['envois' => array_values($envois), 'derniers' => $derniers]), LOCK_EX);
+        return true;
+    } finally {
+        ins_deverrouiller($verrou);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2243,7 +2417,7 @@ function ins_rendu_commande(array $c, array $quantites, string $err, string $si)
     $h = '<div class="champ commande' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="commande"' . $si . '>'
         . '<fieldset style="border:0;margin:0;padding:0"><legend class="lib">' . e($c['libelle']) . $req . '</legend>';
     if ($c['aide'] !== '') {
-        $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+        $h .= '<div class="aide">' . ins_texte($c['aide']) . '</div>';
     }
     if (!$produits) {
         $h .= '<p class="info">' . e(t('cmd_aucun_produit')) . '</p>';
@@ -2331,14 +2505,14 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
 {
     $h = '';
     foreach ($form['champs'] as $nom => $c) {
-        $si = $c['si'] ? ' data-si="' . e(json_encode($c['si'], JSON_UNESCAPED_UNICODE)) . '"' : '';
+        $si = $c['si'] ? ' data-si="' . e(json_encode($c['si'], JSON_UNESCAPED_UNICODE)) . '"' . ($c['si_ou'] ? ' data-si-ou' : '') : '';
 
         if ($c['type'] === 'titre') {
             $h .= '<h2 data-bloc="' . e($nom) . '"' . $si . '>' . e($c['libelle']) . '</h2>';
             continue;
         }
         if ($c['type'] === 'info') {
-            $h .= '<div class="info" data-bloc="' . e($nom) . '"' . $si . '>' . nl2br(e($c['libelle'])) . '</div>';
+            $h .= '<div class="info" data-bloc="' . e($nom) . '"' . $si . '>' . ins_texte($c['libelle']) . '</div>';
             continue;
         }
 
@@ -2369,7 +2543,7 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
                 : '<label class="lib" for="' . $idh . '">' . e($c['libelle']) . $req . '</label>';
         }
         if ($c['aide'] !== '') {
-            $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+            $h .= '<div class="aide">' . ins_texte($c['aide']) . '</div>';
         }
 
         $ph = $c['exemple'] !== '' ? ' placeholder="' . e($c['exemple']) . '"' : '';
@@ -2412,7 +2586,7 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
                 break;
             case 'case':
                 $ch = ($premier ? ins_oui($val) : ($b !== null && $b !== '')) ? ' checked' : '';
-                $h .= '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="1"' . $ch . $aria . '> <span>' . e($c['libelle']) . $req . '</span></label>';
+                $h .= '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="1"' . $ch . $aria . '> <span>' . ins_texte($c['libelle']) . $req . '</span></label>';
                 break;
             default:
                 $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'date' => 'date'];
@@ -2449,7 +2623,7 @@ function ins_rendu_grille(array $c, ?array $existante, array $saisie, string $er
         . '<fieldset style="border:0;margin:0;padding:0"' . ($err !== '' ? ' aria-describedby="' . $idh . '_e"' : '') . '>'
         . '<legend class="lib">' . e($c['libelle']) . $req . '</legend>';
     if ($c['aide'] !== '') {
-        $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+        $h .= '<div class="aide">' . ins_texte($c['aide']) . '</div>';
     }
     $h .= '<table class="grille"><thead><tr><td></td>';
     foreach ($c['options_aff'] as $o) {
@@ -2528,14 +2702,15 @@ function ins_script_conditions(): string
   }
   function maj() {
     blocs.forEach(function (bloc) {
-      var conds = JSON.parse(bloc.getAttribute('data-si')), vis = true;
-      conds.forEach(function (c) {
+      var conds = JSON.parse(bloc.getAttribute('data-si')), ou = bloc.hasAttribute('data-si-ou');
+      var res = conds.map(function (c) {
         var v = valeurs(c.champ);
-        if (v === null) { vis = false; return; }
-        if (c.num) { if (!comparer(c, v[0] || '')) vis = false; return; }
+        if (v === null) return false; // champ visé masqué
+        if (c.num) return comparer(c, v[0] || '');
         var trouve = c.valeurs.some(function (x) { return v.indexOf(x.toLowerCase()) >= 0; });
-        if (trouve !== c.egal) vis = false;
+        return trouve === c.egal;
       });
+      var vis = ou ? res.indexOf(true) >= 0 : res.indexOf(false) < 0; // OU : une suffit ; ET : toutes
       bloc.classList.toggle('cache', !vis);
       bloc.querySelectorAll('input,select,textarea').forEach(function (el) { el.disabled = !vis; });
     });
@@ -2575,7 +2750,7 @@ const INS_PROPRIETES_TYPE = [
 function ins_modele(array $form): array
 {
     $g = [];
-    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'confirmation', 'confirmation_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
         $g[$k] = (string)$form[$k];
     }
     // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
@@ -2597,6 +2772,7 @@ function ins_modele(array $form): array
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
             'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'],
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
+            'si_ou' => (bool)$c['si_ou'],
             'trad' => (object)$c['trad'],
         ];
     }
@@ -2692,6 +2868,15 @@ function ins_modele_vers_ini(string $id, array $m): string
         $tr[$lg] = $trad($g['trad'] ?? [], $lg, 'logo_texte');
     }
     $ecrire($l, 'logo_texte', ins_modele_texte($g['logo_texte'] ?? ''), $tr);
+    $conf = ins_modele_texte($g['confirmation'] ?? '');
+    $ecrire($l, 'confirmation', $conf);
+    if ($conf !== '') {
+        $tr = [];
+        foreach ($autres as $lg) {
+            $tr[$lg] = $trad($g['trad'] ?? [], $lg, 'confirmation_texte');
+        }
+        $ecrire($l, 'confirmation_texte', ins_modele_texte($g['confirmation_texte'] ?? ''), $tr);
+    }
     $fichier = ins_modele_texte($g['fichier'] ?? '');
     if ($fichier !== '' && $fichier !== $id) {
         $ecrire($l, 'fichier', $fichier);
@@ -2809,7 +2994,11 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
             $conds[] = $cible . (empty($cond['egal']) ? ' != ' : ' = ') . implode(' | ', $vals);
         }
-        $ecrire($l, 'si', implode(' & ', $conds));
+        $ou = !empty($c['si_ou']) && count($conds) > 1;
+        if ($ou && !ins_config()['conditions_ou']) {
+            throw new RuntimeException(t('err_condition_ou', ['f' => "$id.ini", 'nom' => $nom]));
+        }
+        $ecrire($l, 'si', implode($ou ? ' || ' : ' & ', $conds));
     }
     return implode("\n", $l) . "\n";
 }
@@ -2834,7 +3023,7 @@ function ins_apercu_document(array $form, string $langue, string $choisi = ''): 
         $h .= '<p class="petit" lang="' . e($avant) . '">' . e($noteAcces) . '</p>';
     }
     if ($f['intro'] !== '') {
-        $h .= '<div class="info">' . nl2br(e($f['intro'])) . '</div>';
+        $h .= '<div class="info">' . ins_texte($f['intro']) . '</div>';
     }
     $h .= '<form onsubmit="return false" novalidate>' . ins_rendu_champs($f, [], [], true)
         . '<p class="petit"><span class="req">*</span> ' . e(t('champ_obligatoire')) . '</p>'

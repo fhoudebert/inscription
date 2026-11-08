@@ -53,6 +53,15 @@ return [
     // Texte de remplacement du logo (lu par les lecteurs d'écran), par exemple le nom de l'association.
     'logo_texte'          => '',
 
+    // Courriels de confirmation aux répondants (clé « confirmation » des formulaires) : false les coupe pour tout le site.
+    // Garde-fous : un message par adresse et par formulaire toutes les 10 minutes, et au plus
+    // « confirmation_max_heure » messages par heure pour tout le site (0 = sans limite).
+    'confirmation'        => true,
+    'confirmation_max_heure' => 30,
+
+    // Conditions multiples avec OU (si = "a = x || b > 4") en plus du ET (&). Désactivé par défaut.
+    'conditions_ou'       => false,
+
     // true : affiche le détail des erreurs (descripteur mal écrit…). À remettre à false ensuite.
     'debug'               => false,
 ];

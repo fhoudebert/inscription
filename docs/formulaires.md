@@ -4,7 +4,7 @@
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
-[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Liens](#liens) · [Courriel de confirmation](#courriel-de-confirmation) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
@@ -51,6 +51,8 @@ Réglages de la section `[formulaire]` :
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque réponse (séparées par des virgules) | — |
+| `confirmation` | `oui` : courriel de confirmation au répondant, à l'adresse du premier champ `email` ; ou le nom du champ `email` à utiliser (voir [Courriel de confirmation](#courriel-de-confirmation)) | pas de courriel |
+| `confirmation_texte` | texte en tête du courriel de confirmation (traduisible) | le message `merci` |
 | `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le [lien de partage](#diffusion-et-lien-de-partage) | oui |
 | `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
 | `modifiable` | accès restreint : `oui` = chaque personne peut revenir modifier sa réponse ; `non` = une réponse définitive | oui |
@@ -114,9 +116,15 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 | `si = "arrivee < 2026-12-12"` | date, au format `AAAA-MM-JJ` |
 | `si = "satisfaction <= 2"` | échelle de notes, si toutes ses notes sont des nombres |
 | `si = "hebergement = Oui & groupe > 4"` | les deux à la fois : choix **et** comparaison |
+| `si = "hebergement = Oui \|\| groupe > 4"` | `\|\|` = **au moins une** des conditions (OU) — à activer dans `config.php` |
 
 Une comparaison (`<`, `<=`, `>`, `>=`) ne porte que sur un **seul** nombre ou une seule date. **Tant que le nombre (ou la date)
 n'est pas saisi, la condition est fausse** : le champ reste masqué, même avec `!=`. À l'écran, l'affichage change pendant la frappe.
+
+Le **OU** (`||`) est désactivé par défaut : mettez `'conditions_ou' => true` dans `prive/config.php` pour l'autoriser.
+Une même condition est soit toute en `&` (toutes vraies), soit toute en `||` (au moins une vraie) : le mélange est refusé.
+Une condition sur un champ masqué est fausse. Dans l'éditeur, un choix « Toutes les conditions (ET) / Au moins une (OU) »
+apparaît dès qu'il y a deux conditions (si le OU est activé).
 
 Un champ masqué n'est jamais obligatoire et n'est pas enregistré (colonne vide), même si une valeur
 est envoyée de force. Sans JavaScript, tous les champs s'affichent mais les mêmes règles s'appliquent à l'enregistrement.
@@ -146,6 +154,45 @@ si          = "vehicule = Oui"
 - multilingue : `lignes_en`, `colonnes_en`, avec autant d'éléments que `lignes` et `colonnes` ;
 - sur téléphone, les lignes s'affichent l'une sous l'autre avec leurs réponses ;
 - une grille peut être conditionnelle (`si = …`), mais un autre champ ne peut pas encore dépendre de la réponse à une grille.
+
+## Liens
+
+Les textes affichés peuvent contenir des liens, dans `intro`, `merci`, `aide`, le `libelle` d'un `info` et celui d'une `case` :
+
+```ini
+intro = "Programme et plan d'accès : [site de la rencontre](https://exemple.org/rencontre)."
+
+[reglement]
+type        = case
+libelle     = "J'ai lu le [règlement](https://exemple.org/reglement) et je l'accepte"
+obligatoire = oui
+```
+
+- `[texte du lien](https://…)` affiche « texte du lien » cliquable ; une adresse écrite seule (`https://exemple.org`) devient
+  aussi un lien ; `mailto:contact@exemple.org` est accepté ;
+- seules les adresses `https://`, `http://` et `mailto:` sont reconnues (pas de `javascript:`…) ; tout autre balisage
+  est affiché tel quel. Les liens s'ouvrent dans un nouvel onglet, pour ne pas perdre la saisie en cours ;
+- dans les courriels (notification, confirmation), `[texte](adresse)` devient « texte (adresse) ».
+
+## Courriel de confirmation
+
+Le répondant peut recevoir un courriel récapitulant sa réponse :
+
+```ini
+[formulaire]
+confirmation       = oui      ; ou le nom du champ email à utiliser : confirmation = email_contact
+confirmation_texte = "Merci, votre inscription est enregistrée. Programme : https://exemple.org/programme"
+```
+
+- il faut un champ de type `email` (le premier, avec `oui`) ; le courriel part à l'adresse saisie, après l'enregistrement ;
+- contenu : `confirmation_texte` (sinon le message `merci`), le numéro de réponse (si `afficher_numero`), puis toutes les
+  réponses, **dans la langue du répondant** ; après une modification (accès restreint `modifiable`), le sujet l'indique ;
+- la page de remerciement signale l'envoi ; « Répondre » au courriel écrit à la première adresse de `notifier` ;
+- garde-fous contre les robots qui saisiraient l'adresse d'un tiers : au plus un courriel par adresse et par formulaire
+  toutes les 10 minutes, et au plus `confirmation_max_heure` (30) courriels par heure pour tout le site ;
+- `'confirmation' => false` dans `config.php` coupe ces courriels pour tout le site (une alerte le rappelle dans `admin.php`) ;
+- l'envoi utilise `mail()` de l'hébergeur, comme les notifications : réglez `expediteur` sur une adresse de votre domaine,
+  sinon les messages risquent de finir dans les indésirables (voir [Réglages](administration.md#réglages)).
 
 ## Exemples
 
@@ -210,7 +257,7 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
-| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle) |
+| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle), liens, courriel de confirmation |
 
 ## Diffusion et lien de partage
 
@@ -389,6 +436,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `places` | `limit` | | `si` | `if` |
 | `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
+| `confirmation` | `confirm` | | | |
 | `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |

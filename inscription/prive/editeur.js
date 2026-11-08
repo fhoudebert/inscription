@@ -426,6 +426,10 @@
       props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
       props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
       props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
+      if (g.confirmation) {
+        props.appendChild(traduisible(g, 'confirmation_texte', { libelle: T('edi_confirmation_texte'), long: true, rows: 3,
+          placeholder: T('edi_confirmation_texte_defaut'), aide: T('edi_confirmation_texte_aide') }));
+      }
       if (cmd) {
         props.appendChild(traduisible(g, 'message', { libelle: T('edi_message_commande'), long: true, rows: 6, placeholder: T('edi_par_defaut'),
           aide: T('edi_message_commande_aide', { champs: S.modele.champs.filter(function (c) { return DECORATIFS.indexOf(c.type) < 0 && c.type !== 'commande'; })
@@ -464,6 +468,15 @@
     }
     props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
+    // Courriel de confirmation au répondant : vers un champ e-mail du formulaire
+    var mails = S.modele.champs.filter(function (c) { return c.type === 'email'; });
+    var valsConf = [['', T('edi_confirmation_non')]].concat(mails.map(function (c, i) {
+      return [i === 0 && g.confirmation === 'oui' ? 'oui' : c.nom, T('edi_confirmation_vers', { champ: c.libelle || c.nom })];
+    }));
+    if (g.confirmation && g.confirmation !== 'oui' && !mails.some(function (c) { return c.nom === g.confirmation; })) valsConf.push([g.confirmation, g.confirmation + ' ⚠']);
+    props.appendChild(choixListe(g, 'confirmation', valsConf, T('edi_confirmation'), dessinerProps));
+    if (!mails.length) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_sans_mail') }));
+    else if (g.confirmation && !D.confirmation_site) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_site') }));
 
     titreGroupe('logo', T('edi_logo_groupe'));
     reglageLogo(g);
@@ -639,6 +652,15 @@
       if (CONDITIONNABLES.indexOf(S.modele.champs[i].type) >= 0) cibles.push(S.modele.champs[i]);
     }
     if (!(c.si || []).length) bloc.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_toujours') }));
+    // Plusieurs conditions : toutes (ET), ou au moins une (OU) si config.php le permet
+    if ((c.si || []).length > 1 && (D.conditions_ou || c.si_ou)) {
+      var sMode = el('select', { 'aria-label': T('edi_cond_mode') },
+        el('option', { value: '', texte: T('edi_cond_toutes') }), el('option', { value: 'ou', texte: T('edi_cond_une') }));
+      sMode.value = c.si_ou ? 'ou' : '';
+      sMode.addEventListener('change', function () { c.si_ou = sMode.value === 'ou'; marquerModifie(); dessinerProps(); planifierApercu(0); });
+      bloc.appendChild(el('div', { classe: 'edi-prop' }, sMode));
+      if (c.si_ou && !D.conditions_ou) bloc.appendChild(el('div', { classe: 'msg', texte: T('edi_cond_ou_desactive') }));
+    }
     (c.si || []).forEach(function (k, n) {
       var cible = cibles.filter(function (x) { return x.nom === k.champ; })[0];
       var sCible = el('select', { 'aria-label': T('edi_cond_champ') },
@@ -685,7 +707,7 @@
       });
       if (!cible) vals.appendChild(el('div', { classe: 'msg', texte: T('edi_cond_ordre', { cible: k.champ }) }));
       bloc.appendChild(el('div', { classe: 'edi-cond' }, el('div', { classe: 'edi-cond-ligne' },
-        n > 0 ? el('span', { classe: 'edi-et', texte: T('edi_et') }) : null, sCible, sOp,
+        n > 0 ? el('span', { classe: 'edi-et', texte: T(c.si_ou ? 'edi_ou' : 'edi_et') }) : null, sCible, sOp,
         bouton('✕', T('edi_cond_retirer'), function () { c.si.splice(n, 1); marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); })), vals));
     });
     if (cibles.length) {
