@@ -94,6 +94,7 @@ Réglages de la section `[formulaire]` :
 | `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
 | `lignes`, `colonnes` | pour `grille` : questions (lignes) et réponses possibles (colonnes), séparées par `\|` |
 | `multiple`    | pour `grille` : `oui` = cases à cocher, plusieurs réponses par ligne |
+| `saisie`      | pour `grille` : `nombre`, `montant` ou `texte` = une zone à remplir par case au lieu d'un choix (voir [Grille de saisie](#grille-de-saisie)) |
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
@@ -179,6 +180,31 @@ si          = "vehicule = Oui"
 - multilingue : `lignes_en`, `colonnes_en`, avec autant d'éléments que `lignes` et `colonnes` ;
 - sur téléphone, les lignes s'affichent l'une sous l'autre avec leurs réponses ;
 - une grille peut être conditionnelle (`si = …`), mais un autre champ ne peut pas encore dépendre de la réponse à une grille.
+
+### Grille de saisie
+
+Avec `saisie = nombre` (ou `montant`, `texte`), chaque case est une **zone à remplir** au lieu d'un bouton :
+
+```ini
+[repas]
+type     = grille
+saisie   = nombre
+libelle  = "Type de repas"
+lignes   = "Samedi midi végétarien | Samedi midi classique | Dimanche midi végétarien | Dimanche soir classique"
+colonnes = "Nombre"
+entier   = oui
+min      = 0
+```
+
+- **une colonne** (ou aucune) : une zone par ligne, colonne du fichier `<champ>_<ligne>` (`repas_samedi_midi_vegetarien`…) ;
+- **plusieurs colonnes** (`colonnes = "Végétarien | Classique"`, lignes = jours) : une zone par case, colonne
+  `<champ>_<ligne>_<colonne>` (`repas_groupe_samedi_midi_vegetarien`) ;
+- `min`, `max`, `entier` s'appliquent à **chaque case** et s'affichent sous la question ; une case invalide est encadrée
+  en rouge et le message la nomme (« Samedi soir / Classique : Nombre entier attendu ») ;
+- `obligatoire = oui` : **au moins une case** remplie ; les cases vides restent vides dans le fichier ;
+- `saisie = montant` affiche la devise et enregistre `12,50` ; `saisie = texte` : texte court ;
+- notification et confirmation : « Samedi midi : Végétarien 2, Classique 3 » ;
+- sur téléphone, chaque ligne s'affiche avec ses zones et le nom de leur colonne.
 
 ## Liens
 

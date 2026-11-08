@@ -579,4 +579,13 @@ return [
     'edi_montant_max'      => 'Maximum amount',
     'edi_heure_min'        => 'Earliest time',
     'edi_heure_max'        => 'Latest time',
+    'err_grille_saisie'    => '{f}: [{nom}] input = "{saisie}": possible values are nombre (number), montant (amount) or texte (text) (no input: choice grid)',
+    'v_grille_une_case'    => 'Fill in at least one cell.',
+    'edi_saisie'           => 'Cell content',
+    'edi_saisie_choix'     => 'Choice (buttons or checkboxes)',
+    'edi_saisie_nombre'    => 'Number to enter',
+    'edi_saisie_montant'   => 'Amount to enter',
+    'edi_saisie_texte'     => 'Short text to enter',
+    'edi_colonnes_saisie'  => 'Columns (one per line, optional)',
+    'edi_colonnes_saisie_aide' => 'No column or a single one: one box per row, file column <name>_<row>. Several: one box per cell, column <name>_<row>_<column>.',
 ];

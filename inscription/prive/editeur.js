@@ -578,11 +578,16 @@
         dessinerListe(); dessinerProps();
       }));
     }
+    if (p.indexOf('saisie') >= 0) {
+      props.appendChild(choixListe(c, 'saisie', [['', T('edi_saisie_choix')], ['nombre', T('edi_saisie_nombre')],
+        ['montant', T('edi_saisie_montant')], ['texte', T('edi_saisie_texte')]], T('edi_saisie'), dessinerProps));
+    }
     if (p.indexOf('lignes') >= 0) {
       props.appendChild(traduisible(c, 'lignes', { libelle: T('edi_lignes'), long: true, rows: 4, liste: true, aide: T('edi_lignes_aide') }));
     }
     if (p.indexOf('options') >= 0 && c.type === 'grille') {
-      props.appendChild(traduisible(c, 'options', { libelle: T('edi_colonnes'), long: true, rows: 3, liste: true, aide: T('edi_options_aide') }));
+      props.appendChild(traduisible(c, 'options', { libelle: T(c.saisie ? 'edi_colonnes_saisie' : 'edi_colonnes'), long: true, rows: 3, liste: true,
+        aide: T(c.saisie ? 'edi_colonnes_saisie_aide' : 'edi_options_aide') }));
     } else if (p.indexOf('options') >= 0) {
       props.appendChild(traduisible(c, 'options', { libelle: T('edi_options'), long: true, rows: 5, liste: true,
         aide: c.type === 'echelle' ? T('edi_options_echelle') : T('edi_options_aide'), apres: optionsModifiees(c) }));
@@ -604,16 +609,18 @@
 
     if (p.indexOf('obligatoire') >= 0) props.appendChild(caseCocher(c, 'obligatoire', c.type === 'case' ? T('edi_obligatoire_case') : T('edi_obligatoire'), dessinerListe));
     if (p.indexOf('unique') >= 0) props.appendChild(caseCocher(c, 'unique', T('edi_unique')));
-    if (p.indexOf('multiple') >= 0) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
-    if (p.indexOf('min') >= 0) {
-      var tp = { date: 'date', heure: 'time', nombre: 'text', montant: 'text' }[c.type] || 'number';
+    if (p.indexOf('multiple') >= 0 && !c.saisie) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
+    var numGrille = c.type !== 'grille' || c.saisie === 'nombre' || c.saisie === 'montant';
+    if (p.indexOf('min') >= 0 && numGrille) {
+      var tc = c.type === 'grille' ? c.saisie : c.type; // grille de saisie : limites de chaque case
+      var tp = { date: 'date', heure: 'time', nombre: 'text', montant: 'text' }[tc] || 'number';
       var lib = { nombre: ['edi_val_min', 'edi_val_max'], montant: ['edi_montant_min', 'edi_montant_max'], date: ['edi_date_min', 'edi_date_max'],
-        heure: ['edi_heure_min', 'edi_heure_max'] }[c.type] || ['edi_long_min', 'edi_long_max'];
+        heure: ['edi_heure_min', 'edi_heure_max'] }[tc] || ['edi_long_min', 'edi_long_max'];
       props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: tp, inputmode: tp === 'text' ? 'decimal' : null }),
         texte(c, 'max', { libelle: T(lib[1]), type: tp, inputmode: tp === 'text' ? 'decimal' : null })));
-      if (['nombre', 'montant', 'heure'].indexOf(c.type) >= 0) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
+      if (['nombre', 'montant', 'heure'].indexOf(tc) >= 0) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
     }
-    if (p.indexOf('entier') >= 0) props.appendChild(caseCocher(c, 'entier', T('edi_entier')));
+    if (p.indexOf('entier') >= 0 && (c.type !== 'grille' || c.saisie === 'nombre')) props.appendChild(caseCocher(c, 'entier', T('edi_entier')));
     if (p.indexOf('defaut') >= 0) {
       if (c.type === 'case') {
         var obj = { v: c.defaut === 'oui' || c.defaut === '1' };

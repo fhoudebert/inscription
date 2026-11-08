@@ -579,4 +579,13 @@ return [
     'edi_montant_max'      => 'Montant maximal',
     'edi_heure_min'        => 'Heure au plus tôt',
     'edi_heure_max'        => 'Heure au plus tard',
+    'err_grille_saisie'    => '{f} : [{nom}] saisie = « {saisie} » : valeurs possibles nombre, montant ou texte (sans saisie : grille de choix)',
+    'v_grille_une_case'    => 'Remplissez au moins une case.',
+    'edi_saisie'           => 'Contenu des cases',
+    'edi_saisie_choix'     => 'Choix (boutons ou cases à cocher)',
+    'edi_saisie_nombre'    => 'Nombre à saisir',
+    'edi_saisie_montant'   => 'Montant à saisir',
+    'edi_saisie_texte'     => 'Texte court à saisir',
+    'edi_colonnes_saisie'  => 'Colonnes (une par ligne, facultatif)',
+    'edi_colonnes_saisie_aide' => 'Sans colonne ou avec une seule : une zone par ligne, colonne <nom>_<ligne> du fichier. Avec plusieurs : une zone par case, colonne <nom>_<ligne>_<colonne>.',
 ];
