@@ -197,7 +197,7 @@ function ins_effet_colonnes(array $form): array
     ];
 }
 
-if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action'], ['editeur_apercu', 'editeur_enregistrer'], true))) {
+if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action'], ['editeur_apercu', 'editeur_enregistrer', 'editeur_image'], true))) {
     $ajax = $_SERVER['REQUEST_METHOD'] === 'POST';
     if (!$gestion) {
         $ajax ? ins_json(['ok' => false, 'erreur' => t('adm_gestion_off')]) : exit(t('adm_gestion_off'));
@@ -207,6 +207,15 @@ if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action
             // Connecté, mais jeton d'une session précédente (reconnexion dans un autre onglet) : on renvoie le jeton
             // actuel pour que l'éditeur recommence. Une page tierce ne peut pas lire cette réponse (même origine).
             ins_json(['ok' => false, 'erreur' => t('adm_jeton'), 'jeton' => $jetonAdmin]);
+        }
+        if ($_POST['action'] === 'editeur_image') {
+            // Logo envoyé depuis l'éditeur : rangé dans prive/images/, la liste mise à jour revient à l'éditeur
+            try {
+                $nomImage = ins_image_televersee($_FILES['image'] ?? null);
+                ins_json(['ok' => true, 'nom' => $nomImage, 'images' => ins_images()]);
+            } catch (Throwable $ex) {
+                ins_json(['ok' => false, 'erreur' => $ex->getMessage()]);
+            }
         }
         $id = (string)($_POST['id'] ?? '');
         $nouveau = !empty($_POST['nouveau']);
@@ -311,6 +320,7 @@ if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action
         'langues' => array_map(function ($c) { return ['code' => $c, 'nom' => ins_textes($c)['nom_langue'] ?? $c]; }, ins_langues()),
         'existants' => array_values(array_map(function ($f) { return basename($f, '.ini'); }, glob($dirForm . '/*.ini') ?: [])),
         'catalogues' => ins_catalogues(),
+        'images' => ins_images(), 'logo_site' => (string)$cfg['logo'],
         'textes' => $textes,
     ];
     ins_entete($nouveau ? t('edi_titre_nouveau') : t('edi_titre', ['id' => $id]));
@@ -430,6 +440,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && !in_arra
             header('Location: admin.php?' . http_build_query(['ok' => 'supprime', 'id' => $id]), true, 303);
             exit;
         }
+        if ($act === 'image_televerser') {
+            $nomImage = ins_image_televersee($_FILES['image'] ?? null);
+            header('Location: admin.php?' . http_build_query(['ok' => 'image_ajoutee', 'id' => $nomImage]) . '#images', true, 303);
+            exit;
+        }
+        if ($act === 'image_supprimer') {
+            $nomImage = (string)($_POST['nom'] ?? '');
+            if (!ins_image_valide($nomImage) || !is_file(INS_PRIVE . '/images/' . $nomImage)) {
+                throw new RuntimeException(t('introuvable'));
+            }
+            if (empty($_POST['confirmer'])) {
+                throw new RuntimeException(t('adm_confirmer_requis'));
+            }
+            $usages = ins_usages_image($nomImage);
+            if ($usages) {
+                throw new RuntimeException(t('adm_img_utilisee', ['nom' => $nomImage, 'usages' => implode(', ', $usages)]));
+            }
+            if (!@unlink(INS_PRIVE . '/images/' . $nomImage)) {
+                throw new RuntimeException(t('err_ecriture', ['fichier' => $nomImage]));
+            }
+            header('Location: admin.php?' . http_build_query(['ok' => 'image_supprimee', 'id' => $nomImage]) . '#images', true, 303);
+            exit;
+        }
         if ($act === 'supprimer_csv') {
             $n = ins_fichier_demande($dir, $_POST['fichier'] ?? '');
             if ($n === null) {
@@ -487,13 +520,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && !in_arra
 }
 if (isset($_GET['ok']) && is_string($_GET['ok'])) {
     $idOk = isset($_GET['id']) && is_string($_GET['id']) ? $_GET['id'] : '';
-    $codes = ['ajoute' => 'adm_ok_ajoute', 'remplace' => 'adm_ok_remplace', 'supprime' => 'adm_ok_supprime', 'csv_supprime' => 'adm_ok_csv_supprime'];
+    $codes = ['ajoute' => 'adm_ok_ajoute', 'remplace' => 'adm_ok_remplace', 'supprime' => 'adm_ok_supprime', 'csv_supprime' => 'adm_ok_csv_supprime',
+        'image_ajoutee' => 'adm_ok_image_ajoutee', 'image_supprimee' => 'adm_ok_image_supprimee'];
     if (isset($codes[$_GET['ok']])) {
         $message = t($codes[$_GET['ok']], ['id' => $idOk]);
         if (!empty($_GET['archive'])) {
             $message .= ' ' . t('adm_ok_archive');
         }
     }
+}
+
+/** Contrôle un envoi de fichier image puis l'enregistre dans prive/images/ (nom retourné). */
+function ins_image_televersee($up): string
+{
+    if (!is_array($up) || ($up['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$up['tmp_name'])) {
+        throw new RuntimeException(t(in_array($up['error'] ?? 0, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) ? 'img_trop_grosse' : 'adm_up_aucun'));
+    }
+    return ins_enregistrer_image((string)$up['tmp_name'], (string)$up['name']);
+}
+
+/** Où une image est utilisée : « logo du site » et formulaires qui la citent (même ceux en erreur). */
+function ins_usages_image(string $nom): array
+{
+    $u = [];
+    if ((string)ins_config()['logo'] === $nom) {
+        $u[] = t('adm_img_site');
+    }
+    foreach (glob(ins_dossier_formulaires() . '/*.ini') ?: [] as $f) {
+        if (preg_match('/^\s*logo\s*=\s*"?' . preg_quote($nom, '/') . '"?\s*$/mi', (string)file_get_contents($f))) {
+            $u[] = basename($f);
+        }
+    }
+    return $u;
 }
 
 /** Petit formulaire POST de suppression, avec case de confirmation. */
@@ -503,7 +561,7 @@ function ins_bouton_suppression(string $action, string $champ, string $valeur, s
         . '<input type="hidden" name="_jeton" value="' . e($jeton) . '">'
         . '<input type="hidden" name="action" value="' . e($action) . '">'
         . '<input type="hidden" name="' . e($champ) . '" value="' . e($valeur) . '">'
-        . '<p class="petit">' . e(t($action === 'supprimer' ? 'adm_suppr_form_expl' : 'adm_suppr_csv_expl')) . '</p>'
+        . '<p class="petit">' . e(t(['supprimer' => 'adm_suppr_form_expl', 'image_supprimer' => 'adm_suppr_img_expl'][$action] ?? 'adm_suppr_csv_expl')) . '</p>'
         . '<label class="opt"><input type="checkbox" name="confirmer" value="1"> <span>' . e(t('adm_confirmer')) . '</span></label>'
         . '<button class="dang">' . e($libelle) . '</button></form></details>';
 }
@@ -731,6 +789,9 @@ foreach ($formulaires as $id => $form) {
         echo '<div class="alerte">' . e(t('adm_fichier_partage', ['fichier' => $form['fichier'],
             'autres' => implode(', ', array_diff($parFichier[$form['fichier']], [$id]))])) . '</div>';
     }
+    if ($form['logo'] !== '' && $form['logo'] !== 'non' && !is_file(INS_PRIVE . '/images/' . $form['logo'])) {
+        echo '<div class="alerte">' . e(t('adm_img_absente', ['nom' => $form['logo']])) . '</div>';
+    }
     echo e(t('adm_nb_reponses', ['n' => $nb])) . ($form['places'] ? ' / ' . e(t('adm_places', ['n' => $form['places']])) : '');
     echo ' · ' . ($etat === '' ? e(t('adm_ouvert')) : e($etat));
     if (ins_multilingue($form)) {
@@ -796,6 +857,38 @@ if ($gestion) {
         . '<p><input type="file" name="csv" accept=".csv,text/csv,text/plain"></p>'
         . '<label class="opt"><input type="checkbox" name="remplacer" value="1"> <span>' . e(t('adm_cat_remplacer')) . '</span></label>'
         . '<button>' . e(t('adm_cat_importer')) . '</button></form></details>';
+}
+echo '</div>';
+
+/* ---------- Images (logos) ---------- */
+echo '<h2 id="images">' . e(t('adm_img_rubrique')) . '</h2><div class="champ"><p class="petit">' . e(t('adm_img_aide')) . '</p>';
+$logoSite = (string)$cfg['logo'];
+if ($logoSite !== '' && (!ins_image_valide($logoSite) || !is_file(INS_PRIVE . '/images/' . $logoSite))) {
+    echo '<div class="alerte">' . e(t('adm_img_site_absent', ['nom' => $logoSite])) . '</div>';
+}
+$images = ins_images();
+if ($images) {
+    echo '<div class="vignettes">';
+    foreach ($images as $img) {
+        $usages = ins_usages_image($img);
+        $taille = @getimagesize(INS_PRIVE . '/images/' . $img);
+        echo '<figure><img src="' . e(ins_url_image($img)) . '" alt=""><figcaption><b>' . e($img) . '</b><br><span class="petit">'
+            . ($taille ? (int)$taille[0] . ' × ' . (int)$taille[1] . ' px · ' : '') . e(ins_taille_lisible((int)filesize(INS_PRIVE . '/images/' . $img)))
+            . '<br>' . e($usages ? t('adm_img_usages', ['usages' => implode(', ', $usages)]) : t('adm_img_inutilisee')) . '</span>';
+        if ($gestion && !$usages) {
+            echo ins_bouton_suppression('image_supprimer', 'nom', $img, t('adm_img_supprimer'), $jetonAdmin);
+        }
+        echo '</figcaption></figure>';
+    }
+    echo '</div>';
+} else {
+    echo '<p>' . e(t('adm_img_aucune')) . '</p>';
+}
+if ($gestion) {
+    echo '<form method="post" enctype="multipart/form-data" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">'
+        . '<input type="hidden" name="_jeton" value="' . e($jetonAdmin) . '"><input type="hidden" name="action" value="image_televerser">'
+        . '<input type="file" name="image" accept="image/png,image/jpeg,image/gif,image/webp" required aria-label="' . e(t('adm_img_fichier')) . '" style="width:auto">'
+        . '<button class="sec">' . e(t('adm_img_ajouter')) . '</button></form>';
 }
 echo '</div>';
 

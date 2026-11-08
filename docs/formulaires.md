@@ -4,9 +4,9 @@
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
-[Champs conditionnels](#champs-conditionnels) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
-[Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
+[Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
 
 ## Principe
@@ -44,6 +44,8 @@ Réglages de la section `[formulaire]` :
 | `intro`     | texte d'introduction | — |
 | `merci`     | message affiché après l'envoi | « Merci, votre réponse est enregistrée. » |
 | `bouton`    | texte du bouton d'envoi | « Envoyer » |
+| `logo`      | image affichée à gauche du titre : nom d'un fichier de `prive/images/` (voir [Logo](#logo)) ; `non` = aucun logo | le logo du site (`config.php`), s'il y en a un |
+| `logo_texte` | texte de remplacement du logo, lu par les lecteurs d'écran (traduisible : `logo_texte_en`) | — |
 | `fichier`   | nom du fichier de réponses (`donnees/<fichier>.csv`) ; deux formulaires ne peuvent pas avoir le même (pensez-y en copiant un `.ini`) | le nom du formulaire |
 | `ouverture` | date/heure d'ouverture : `"2026-11-15"` ou `"2026-11-15 09:00"` | — |
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
@@ -72,6 +74,7 @@ Réglages de la section `[formulaire]` :
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
 | `case`       | une case unique (accord, consentement RGPD…) | `oui` / `non` |
 | `echelle`    | note sur une ligne (1 à 5 par défaut, ou les valeurs de `options`), avec textes `gauche` / `droite` aux extrémités | la note choisie |
+| `grille`     | tableau de choix : une ligne par question (`lignes`), une colonne par réponse (`colonnes`), voir [Grille](#grille) | une colonne `<nom>_<ligne>` par ligne |
 | `commande`   | tableau des produits disponibles d'un `catalogue`, quantité par produit, total estimé (un seul par formulaire) | le détail lisible + une colonne `<nom>_total` |
 | `titre`      | intertitre de section (rien à saisir) | — (pas de colonne) |
 | `info`       | paragraphe d'information (rien à saisir) | — (pas de colonne) |
@@ -85,6 +88,8 @@ Réglages de la section `[formulaire]` :
 | `aide`        | petit texte d'aide sous la question |
 | `obligatoire` | `oui` = réponse exigée (pour `case` : la case doit être cochée) |
 | `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
+| `lignes`, `colonnes` | pour `grille` : questions (lignes) et réponses possibles (colonnes), séparées par `\|` |
+| `multiple`    | pour `grille` : `oui` = cases à cocher, plusieurs réponses par ligne |
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
@@ -96,7 +101,7 @@ Réglages de la section `[formulaire]` :
 ## Champs conditionnels
 
 Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fonction d'une réponse
-à un champ `choix`, `liste`, `cases`, `echelle` ou `case` **décrit avant lui** :
+à un champ `choix`, `liste`, `cases`, `echelle`, `case`, `nombre` ou `date` **décrit avant lui** :
 
 | écriture | sens |
 |----------|------|
@@ -105,9 +110,42 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 | `si = "profil != Bénévole"` | affiché si « Bénévole » n'est **pas** choisi |
 | `si = "profil = Association & stand = Oui"` | `&` = les deux conditions à la fois |
 | `si = "covoiturage = oui"` | pour un champ de type `case` (cochée = `oui`, non cochée = `non`) |
+| `si = "groupe > 4"` | nombre : `<`, `<=`, `>`, `>=`, et aussi `=` / `!=` (virgule ou point : `2,5`) |
+| `si = "arrivee < 2026-12-12"` | date, au format `AAAA-MM-JJ` |
+| `si = "satisfaction <= 2"` | échelle de notes, si toutes ses notes sont des nombres |
+| `si = "hebergement = Oui & groupe > 4"` | les deux à la fois : choix **et** comparaison |
+
+Une comparaison (`<`, `<=`, `>`, `>=`) ne porte que sur un **seul** nombre ou une seule date. **Tant que le nombre (ou la date)
+n'est pas saisi, la condition est fausse** : le champ reste masqué, même avec `!=`. À l'écran, l'affichage change pendant la frappe.
 
 Un champ masqué n'est jamais obligatoire et n'est pas enregistré (colonne vide), même si une valeur
 est envoyée de force. Sans JavaScript, tous les champs s'affichent mais les mêmes règles s'appliquent à l'enregistrement.
+
+## Grille
+
+Une **grille** pose la même question pour plusieurs lignes (jours, ateliers…) dans un tableau, un bouton par case :
+
+```ini
+[vehiculer]
+type        = grille
+libelle     = "Si des convives ne sont pas véhiculés, êtes-vous disponible pour les véhiculer ?"
+lignes      = "Vendredi | Samedi | Dimanche"
+colonnes    = "Oui | Non"
+obligatoire = oui
+si          = "vehicule = Oui"
+```
+
+- **une réponse par ligne** (boutons radio) ; avec `multiple = oui`, des **cases à cocher** et plusieurs réponses par ligne
+  (ex. repas : déjeuner et dîner) ;
+- `obligatoire = oui` : **chaque ligne** doit avoir une réponse ; les lignes oubliées sont signalées en rouge ;
+- **fichier de réponses** : une colonne par ligne, nommée `<champ>_<ligne>` en minuscules sans accents ni espaces
+  (`vehiculer_vendredi`, `vehiculer_samedi`, `vehiculer_dimanche`), contenant la réponse (`Oui`), ou les réponses
+  séparées par `|` avec `multiple = oui`. Renommer une ligne change sa colonne (l'ancien fichier est alors archivé,
+  voir [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé)) ;
+- dans la notification par courriel et le message d'une commande (`{vehiculer}`), la grille est résumée « Vendredi : Oui », une ligne par jour ;
+- multilingue : `lignes_en`, `colonnes_en`, avec autant d'éléments que `lignes` et `colonnes` ;
+- sur téléphone, les lignes s'affichent l'une sous l'autre avec leurs réponses ;
+- une grille peut être conditionnelle (`si = …`), mais un autre champ ne peut pas encore dépendre de la réponse à une grille.
 
 ## Exemples
 
@@ -172,6 +210,7 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
+| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle) |
 
 ## Diffusion et lien de partage
 
@@ -279,6 +318,28 @@ obligatoire = oui
 
 Exemple complet : `prive/formulaires/panier.ini` et le catalogue fictif `prive/catalogues/legumes.csv`.
 
+## Logo
+
+Une image (logo de l'association, de l'entreprise…) peut s'afficher **à gauche du titre** du formulaire, et aussi sur la page
+de remerciement et la page de connexion des accès restreints :
+
+```ini
+[formulaire]
+titre      = "Panier de la semaine"
+logo       = "exemple-panier.png"
+logo_texte = "Les jardins de l'exemple"
+```
+
+- l'image se range dans `prive/images/` : rubrique **Images** de `admin.php`, bouton d'envoi de l'éditeur, ou FTP
+  (voir [Images](administration.md#images)) ; elle est servie par `index.php`, la zone privée reste fermée ;
+- formats acceptés : **PNG, JPEG, GIF, WebP**, 1 Mo et 4000 × 4000 pixels au plus. Le **SVG est refusé** (il peut contenir du script) ;
+- affichée sur 80 pixels de haut au plus (56 sur téléphone) : prévoir une image d'environ 160 pixels de haut pour un rendu net ;
+- sans clé `logo`, c'est le **logo du site** qui s'affiche (clé `logo` de `config.php`, aussi sur la liste des formulaires) ;
+  `logo = non` le retire pour ce formulaire ;
+- `logo_texte` décrit l'image pour les lecteurs d'écran ; laissez-le vide si le titre suffit ;
+- un nom d'image incorrect (chemin, extension inconnue) rend le formulaire invalide ; une image absente est simplement
+  omise, avec une alerte dans `admin.php`.
+
 ## Formulaire multilingue
 
 ```ini
@@ -326,6 +387,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `fichier` | `file` | | `exemple` | `placeholder` |
 | `ouverture` / `fermeture` | `opens` / `closes` | | `gauche` / `droite` | `left` / `right` |
 | `places` | `limit` | | `si` | `if` |
+| `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
@@ -349,6 +411,16 @@ Si le fichier contient une erreur (type inconnu, condition vers un champ inexist
 la page affiche « Formulaire introuvable ou mal décrit » ; le détail de l'erreur est indiqué sur `admin.php`
 (ou sur la page elle-même avec `'debug' => true` dans `config.php`). Un fichier envoyé par `admin.php` est vérifié
 avant d'être installé : en cas d'erreur, il est refusé et rien ne change.
+
+Les erreurs d'écriture les plus courantes sont signalées avec leur numéro de ligne :
+
+| message | correction |
+|---------|------------|
+| « ligne 12 : « [c_8_detail » — il manque le crochet fermant ] » | écrire `[c_8_detail]` |
+| « il manque le crochet ouvrant [ » | une ligne `nom]` : écrire `[nom]` |
+| « le texte entre guillemets qui commence ici n'est jamais refermé » | ajouter le `"` final du texte commencé à cette ligne |
+| « teste « (Samedi matin », qui n'est pas une option » | dans `si`, pas de parenthèses ; valeurs écrites exactement comme dans `options` |
+| « « > » ne s'applique qu'à un nombre, une date ou une échelle » | comparaison sur un champ texte ou choix : utiliser `=` / `!=` |
 
 Après modification d'un fichier par FTP, attendez quelques secondes avant de recharger la page
 (certains hébergeurs gardent les fichiers PHP en cache un court instant).

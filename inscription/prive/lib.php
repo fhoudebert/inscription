@@ -21,11 +21,14 @@ const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage te
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
-const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message'];
-const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options'];
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte'];
+// Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
+const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
+const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
-    'choix', 'liste', 'cases', 'case', 'echelle', 'commande', 'titre', 'info',
+    'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'titre', 'info',
 ];
 // Catalogues de produits (prive/catalogues/<nom>.csv) pour les champs « commande »
 const INS_COLONNES_CATALOGUE = ['id', 'categorie', 'produit', 'unite', 'prix', 'pas', 'disponible'];
@@ -42,6 +45,7 @@ const INS_ALIAS_TYPES = [
     'dropdown' => 'liste', 'checkbox' => 'cases', 'checkboxes' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'consent' => 'case',
     'note' => 'echelle', 'échelle' => 'echelle', 'scale' => 'echelle', 'rating' => 'echelle',
+    'grid' => 'grille', 'matrix' => 'grille', 'tableau' => 'grille', 'matrice' => 'grille',
     'order' => 'commande', 'panier' => 'commande', 'basket' => 'commande',
     'section' => 'titre', 'title' => 'titre', 'heading' => 'titre', 'texte_info' => 'info',
 ];
@@ -49,6 +53,7 @@ const INS_ALIAS_TYPES = [
 const INS_CLES_FORMULAIRE = [
     'titre' => ['titre', 'title'], 'intro' => ['intro', 'introduction'], 'merci' => ['merci', 'thanks'],
     'bouton' => ['bouton', 'button'], 'fichier' => ['fichier', 'file'], 'message' => ['message'],
+    'logo' => ['logo'], 'logo_texte' => ['logo_texte', 'logo_text', 'logo_alt'],
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
@@ -57,7 +62,8 @@ const INS_CLES_FORMULAIRE = [
 ];
 const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
-    'obligatoire' => ['obligatoire', 'required'], 'options' => ['options'], 'defaut' => ['defaut', 'default'],
+    'obligatoire' => ['obligatoire', 'required'], 'options' => ['options', 'colonnes', 'columns'], 'defaut' => ['defaut', 'default'],
+    'lignes' => ['lignes', 'rows'], 'multiple' => ['multiple'],
     'min' => ['min'], 'max' => ['max'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
     'catalogue' => ['catalogue', 'catalog'],
@@ -85,6 +91,8 @@ function ins_config(): array
             'expediteur'          => '',
             'debug'               => false,
             'devise'              => '€',
+            'logo'                => '',
+            'logo_texte'          => '',
         ];
         $fichier = INS_PRIVE . '/config.php';
         $c = is_file($fichier) ? require $fichier : [];
@@ -284,6 +292,27 @@ function ins_liste_options(string $v): array
     return array_values(array_filter(array_map('trim', explode('|', $v)), 'strlen'));
 }
 
+/** Repère d'une ligne de grille, d'après son libellé : « Vendredi 12 » → vendredi_12 (colonne <champ>_vendredi_12). */
+function ins_id_ligne(string $libelle): string
+{
+    $s = function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $libelle) : $libelle;
+    $s = trim((string)preg_replace('/[^a-z0-9]+/', '_', strtolower($s)), '_');
+    return substr($s, 0, 40) ?: 'l' . substr(sha1($libelle), 0, 6);
+}
+
+/** Réponse à une grille en une seule valeur lisible : « Vendredi : Oui » une ligne par ligne de la grille. */
+function ins_resume_grille(array $c, array $valeurs): string
+{
+    $r = [];
+    foreach ($c['lignes_id'] as $i => $idl) {
+        $v = (string)($valeurs[$c['nom'] . '_' . $idl] ?? '');
+        if ($v !== '') {
+            $r[] = $c['lignes'][$i] . ' : ' . $v;
+        }
+    }
+    return implode("\n", $r);
+}
+
 /* ------------------------------------------------------------------ */
 /* Descripteurs de formulaires                                        */
 /* ------------------------------------------------------------------ */
@@ -349,7 +378,16 @@ function ins_analyser_formulaire(string $id, string $contenu): array
     $ini = @parse_ini_string($contenu, true, INI_SCANNER_NORMAL);
     if ($ini === false) {
         $err = error_get_last();
-        throw new RuntimeException(t('err_syntaxe', ['f' => $f, 'detail' => $err['message'] ?? '?']));
+        // Message précis (crochet ou guillemet manquant) quand on trouve la ligne fautive
+        $diag = ins_diagnostic_ini($contenu, $f);
+        if ($diag !== '') {
+            throw new RuntimeException($diag);
+        }
+        $detail = (string)($err['message'] ?? '?');
+        if (preg_match('/ on line (\d+)/', $detail, $m)) {
+            $detail = t('err_syntaxe_ligne', ['n' => $m[1]]) . ' ' . preg_replace('/ in Unknown on line \d+$/', '', $detail);
+        }
+        throw new RuntimeException(t('err_syntaxe', ['f' => $f, 'detail' => $detail]));
     }
 
     $g = $ini['formulaire'] ?? ($ini['form'] ?? []);
@@ -390,6 +428,8 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'merci'           => trim((string)$lit('merci')),   // vide = texte par défaut de la langue
         'bouton'          => trim((string)$lit('bouton')),  // idem
         'message'         => trim((string)$lit('message')), // message de commande (vide = texte par défaut)
+        'logo'            => trim((string)$lit('logo')),    // image de prive/images/ ; vide = logo du site ; « non » = aucun
+        'logo_texte'      => trim((string)$lit('logo_texte')),
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
@@ -418,6 +458,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
     if (!ins_id_valide($form['fichier'])) {
         throw new RuntimeException(t('err_fichier', ['f' => $f]));
     }
+    if (in_array(ins_minuscules($form['logo']), ['non', 'aucun', 'no', 'none'], true)) {
+        $form['logo'] = 'non';
+    } elseif ($form['logo'] !== '' && !ins_image_valide($form['logo'])) {
+        throw new RuntimeException(t('err_logo', ['f' => $f, 'logo' => $form['logo']]));
+    }
 
     $vus = [];
     foreach ($ini as $nom => $p) {
@@ -444,8 +489,25 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         if ($type === 'echelle' && !$options) {
             $options = ['1', '2', '3', '4', '5'];
         }
+        if ($type === 'grille' && count($options) < 1) {
+            throw new RuntimeException(t('err_grille_colonnes', ['f' => $f, 'nom' => $nom]));
+        }
         if (in_array($type, ['choix', 'liste', 'cases'], true) && count($options) < 1) {
             throw new RuntimeException(t('err_options', ['f' => $f, 'nom' => $nom, 'type' => $type]));
+        }
+        $lignes = $type === 'grille' ? ins_liste_options((string)$lc('lignes')) : [];
+        $lignesId = [];
+        if ($type === 'grille') {
+            if (!$lignes) {
+                throw new RuntimeException(t('err_grille_lignes', ['f' => $f, 'nom' => $nom]));
+            }
+            foreach ($lignes as $lg) {
+                $idl = ins_id_ligne($lg);
+                if (in_array($idl, $lignesId, true)) {
+                    throw new RuntimeException(t('err_grille_double', ['f' => $f, 'nom' => $nom, 'ligne' => $lg]));
+                }
+                $lignesId[] = $idl;
+            }
         }
         $min = (string)$lc('min');
         $max = (string)$lc('max');
@@ -466,6 +528,9 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'si'          => [],
             'trad'        => [],
             'catalogue'   => '',
+            'lignes'      => $lignes,   // grille : libellés des lignes (traduisibles)
+            'lignes_id'   => $lignesId, // grille : repères des lignes → colonnes <nom>_<repère> du CSV
+            'multiple'    => $type === 'grille' && ins_oui($lc('multiple')),
         ];
         if ($type === 'commande') {
             $cat = trim((string)$lc('catalogue'));
@@ -488,10 +553,12 @@ function ins_analyser_formulaire(string $id, string $contenu): array
                 if ($v === null || $v === '') {
                     continue;
                 }
-                if ($cle === 'options') {
+                if ($cle === 'options' || $cle === 'lignes') {
                     $v = ins_liste_options($v);
-                    if (count($v) !== count($options)) {
-                        throw new RuntimeException(t('err_options_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($options)]));
+                    $attendu = $cle === 'options' ? $options : $lignes;
+                    if (count($v) !== count($attendu)) {
+                        $cleTrad = $cle === 'lignes' ? 'lignes' : ($type === 'grille' ? 'colonnes' : 'options');
+                        throw new RuntimeException(t('err_liste_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($attendu), 'cle' => $cleTrad]));
                     }
                 }
                 $champ['trad'][$lg][$cle] = $v;
@@ -513,6 +580,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $c['nom'] . '_total']));
         }
     }
+    // Colonnes en double (une ligne de grille « vehiculer_samedi » et un champ du même nom…)
+    $doubles = array_keys(array_filter(array_count_values(ins_colonnes($form + ['acces' => ''])), function ($n) { return $n > 1; }));
+    if ($doubles) {
+        throw new RuntimeException(t('err_colonne_double', ['f' => $f, 'colonne' => $doubles[0]]));
+    }
     return $form;
 }
 
@@ -533,6 +605,55 @@ function ins_date_ini($v, string $f, string $cle): ?int
 }
 
 /**
+ * Cherche la ligne fautive d'un .ini illisible : section sans crochet fermant ou ouvrant,
+ * texte après « ] », ligne qui n'est ni [section] ni clé = valeur, guillemet jamais refermé.
+ * @return string message d'erreur, ou '' si rien de précis n'est trouvé
+ */
+function ins_diagnostic_ini(string $contenu, string $f): string
+{
+    $lignes = preg_split('/\R/', $contenu) ?: [];
+    $ouvert = 0; // ligne où un texte entre guillemets a commencé sans être refermé
+    foreach ($lignes as $i => $brute) {
+        $n = $i + 1;
+        $l = trim($brute);
+        $court = mb_strimwidth($l, 0, 60, '…');
+        if ($ouvert) {
+            if (ins_guillemets_impairs($l)) {
+                $ouvert = 0;
+            }
+            continue;
+        }
+        if ($l === '' || $l[0] === ';' || $l[0] === '#') {
+            continue;
+        }
+        if ($l[0] === '[') {
+            if (strpos($l, ']') === false) {
+                return t('err_ini_crochet_fermant', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+            }
+            if (!preg_match('/^\[[^\]\[]*\]\s*(;.*)?$/', $l)) {
+                return t('err_ini_section', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+            }
+            continue;
+        }
+        $egal = strpos($l, '=');
+        if ($egal === false) {
+            return t(preg_match('/^[^"]*\]\s*(;.*)?$/', $l) ? 'err_ini_crochet_ouvrant' : 'err_ini_ligne', ['f' => $f, 'n' => $n, 'ligne' => $court]);
+        }
+        if (ins_guillemets_impairs(substr($l, $egal + 1))) {
+            $ouvert = $n;
+        }
+    }
+    return $ouvert ? t('err_ini_guillemet', ['f' => $f, 'n' => $ouvert]) : '';
+}
+
+/** Nombre impair de guillemets non échappés (\") dans un morceau de ligne ? */
+function ins_guillemets_impairs(string $s): bool
+{
+    $s = str_replace('\\\\', '', $s);
+    return preg_match_all('/(?<!\\\\)"/', $s) % 2 === 1;
+}
+
+/**
  * « si » : conditions d'affichage, séparées par « & » (toutes doivent être vraies).
  *   profil = Bénévole | Média    → l'une de ces réponses est choisie
  *   profil != Bénévole           → aucune de ces réponses n'est choisie
@@ -546,7 +667,7 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         if ($morceau === '') {
             continue;
         }
-        if (!preg_match('/^([a-z][a-z0-9_]*)\s*(!=|=)\s*(.+)$/is', $morceau, $m)) {
+        if (!preg_match('/^([a-z][a-z0-9_]*)\s*(!=|<=|>=|=|<|>)\s*(.+)$/is', $morceau, $m)) {
             throw new RuntimeException(t('err_condition', ['f' => $f, 'nom' => $nom, 'cond' => $morceau]));
         }
         $cible = $m[1];
@@ -555,6 +676,32 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         }
         $valeurs = array_values(array_filter(array_map('trim', explode('|', $m[3])), 'strlen'));
         $c = $connus[$cible];
+        if (in_array($c['type'], ['grille', 'commande'], true)) {
+            throw new RuntimeException(t('err_condition_grille', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
+        }
+        $op = $m[2];
+        $comparaison = !in_array($op, ['=', '!='], true);
+        // Comparaison de nombres ou de dates : champ nombre, date, ou échelle dont les notes sont des nombres
+        $num = in_array($c['type'], ['nombre', 'date'], true) || ($c['type'] === 'echelle' && $comparaison);
+        if ($comparaison && !$num) {
+            throw new RuntimeException(t('err_condition_comparaison', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'op' => $op]));
+        }
+        if ($num) {
+            if ($comparaison && count($valeurs) !== 1) {
+                throw new RuntimeException(t('err_condition_valeur', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'valeur' => trim($m[3])]));
+            }
+            if ($c['type'] === 'echelle' && array_filter($c['options'], function ($o) { return ins_valeur_comparable('nombre', $o) === null; })) {
+                throw new RuntimeException(t('err_condition_echelle', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
+            }
+            foreach ($valeurs as $v) {
+                if (ins_valeur_comparable($c['type'] === 'date' ? 'date' : 'nombre', $v) === null) {
+                    throw new RuntimeException(t($c['type'] === 'date' ? 'err_condition_date' : 'err_condition_valeur',
+                        ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'valeur' => $v]));
+                }
+            }
+            $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op !== '!=', 'valeurs' => $valeurs, 'num' => $c['type'] === 'date' ? 'date' : 'nombre'];
+            continue;
+        }
         if ($c['type'] === 'case') {
             $valeurs = array_map(function ($v) { return ins_oui($v) ? '1' : '0'; }, $valeurs);
         } elseif ($c['options']) {
@@ -565,9 +712,46 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
                 }
             }
         }
-        $res[] = ['champ' => $cible, 'egal' => $m[2] === '=', 'valeurs' => $valeurs];
+        $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op === '=', 'valeurs' => $valeurs, 'num' => ''];
     }
     return $res;
+}
+
+/** Valeur comparable d'une saisie : nombre (virgule ou point) ou date AAAA-MM-JJ ; null si illisible ou vide. */
+function ins_valeur_comparable(string $genre, string $v)
+{
+    $v = trim($v);
+    if ($genre === 'date') {
+        $d = DateTime::createFromFormat('!Y-m-d', $v);
+        return $d && $d->format('Y-m-d') === $v ? $v : null;
+    }
+    return preg_match('/^-?\d+([.,]\d+)?$/', $v) ? (float)str_replace(',', '.', $v) : null;
+}
+
+/** Condition « si » sur un nombre ou une date (=, !=, <, <=, >, >=). Saisie vide ou illisible : condition fausse. */
+function ins_comparer(array $cond, string $saisie): bool
+{
+    $x = ins_valeur_comparable($cond['num'], $saisie);
+    if ($x === null) {
+        return false;
+    }
+    $res = [];
+    foreach ($cond['valeurs'] as $v) {
+        $y = ins_valeur_comparable($cond['num'], (string)$v);
+        $res[] = $y === null ? null : ($x < $y ? -1 : ($x > $y ? 1 : 0));
+    }
+    $res = array_values(array_filter($res, function ($r) { return $r !== null; }));
+    if (!$res) {
+        return false;
+    }
+    switch ($cond['op']) {
+        case '=':  return in_array(0, $res, true);
+        case '!=': return !in_array(0, $res, true);
+        case '<':  return $res[0] < 0;
+        case '<=': return $res[0] <= 0;
+        case '>':  return $res[0] > 0;
+        default:   return $res[0] >= 0; // >=
+    }
 }
 
 /**
@@ -668,6 +852,12 @@ function ins_colonnes(array $form): array
     }
     foreach ($form['champs'] as $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
+            if ($c['type'] === 'grille') {
+                foreach ($c['lignes_id'] as $idl) {
+                    $cols[] = $c['nom'] . '_' . $idl; // une colonne par ligne de la grille
+                }
+                continue;
+            }
             $cols[] = $c['nom'];
             if ($c['type'] === 'commande') {
                 $cols[] = $c['nom'] . '_total'; // total estimé, en nombre
@@ -812,6 +1002,12 @@ function ins_visible(array $c, array $valeurs, array $visibles, array $champs, s
             return false; // dépend d'un champ lui-même masqué
         }
         $v = $valeurs[$cible] ?? '';
+        if (!empty($cond['num'])) {
+            if (!ins_comparer($cond, (string)$v)) {
+                return false;
+            }
+            continue;
+        }
         if ($champs[$cible]['type'] === 'case') {
             $choisis = [$v === ins_valeur_case(true, $langue) ? '1' : '0'];
         } else {
@@ -853,6 +1049,9 @@ function ins_valider(array $form, array $post): array
         $visibles[$nom] = $visible;
         if (!$visible) {
             $valeurs[$nom] = '';
+            foreach ($c['lignes_id'] as $idl) {
+                $valeurs[$nom . '_' . $idl] = '';
+            }
             continue;
         }
 
@@ -869,6 +1068,29 @@ function ins_valider(array $form, array $post): array
                 break;
             case 'cases':
                 $v = implode(' | ', ins_choisis($c, $b));
+                break;
+            case 'grille':
+                $b = is_array($b) ? $b : [];
+                $manquent = [];
+                foreach ($c['lignes_id'] as $i => $idl) {
+                    $bl = $b[$idl] ?? null;
+                    if ($c['multiple']) {
+                        $vl = implode(' | ', ins_choisis($c, is_array($bl) ? $bl : null));
+                    } else {
+                        $vl = ins_choisis($c, is_array($bl) ? null : $bl)[0] ?? '';
+                        if ($vl === '' && is_string($bl) && $bl !== '') {
+                            $err = t('v_choix_invalide');
+                        }
+                    }
+                    $valeurs[$nom . '_' . $idl] = $vl;
+                    if ($vl === '') {
+                        $manquent[] = $c['lignes'][$i];
+                    }
+                }
+                if ($err === '' && $c['obligatoire'] && $manquent) {
+                    $err = count($manquent) === count($c['lignes']) ? t('v_obligatoire') : t('v_grille_lignes', ['lignes' => implode(', ', $manquent)]);
+                }
+                $v = ins_resume_grille($c, $valeurs); // pour la notification et les messages
                 break;
             case 'commande':
                 [$lignesCmd, $err] = ins_valider_commande($c, is_array($b) ? $b : []);
@@ -901,7 +1123,7 @@ function ins_valider(array $form, array $post): array
                     $err = ins_verifier_format($c, $v);
                 }
         }
-        if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande'], true) && $v === '') {
+        if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande', 'grille'], true) && $v === '') {
             $err = t('v_obligatoire');
         }
         if ($err !== '') {
@@ -1525,7 +1747,8 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
     $corps .= "\n";
     foreach ($form['champs'] as $nom => $c) {
         if (!in_array($c['type'], INS_TYPES_DECORATIFS, true)) {
-            $corps .= $c['libelle'] . ' : ' . ($c['type'] === 'commande' ? "\n" : '') . ($valeurs[$nom] ?? '') . "\n";
+            $v = $c['type'] === 'grille' ? ins_resume_grille($c, $valeurs) : ($valeurs[$nom] ?? '');
+            $corps .= $c['libelle'] . ' : ' . (in_array($c['type'], ['commande', 'grille'], true) ? "\n" : '') . $v . "\n";
         }
     }
     if (isset($valeurs['__commande'])) {
@@ -1572,6 +1795,138 @@ function ins_verifier_jeton(string $fid, $jeton): string
         return 'expire';
     }
     return '';
+}
+
+/* ------------------------------------------------------------------ */
+/* Images (logos)                                                     */
+/* ------------------------------------------------------------------ */
+
+function ins_dossier_images(): string
+{
+    $dir = INS_PRIVE . '/images';
+    ins_preparer_dossier($dir);
+    return $dir;
+}
+
+/** Nom d'image acceptable : lettres, chiffres, - et _, extension d'image connue (jamais de chemin). */
+function ins_image_valide(string $nom): bool
+{
+    return (bool)preg_match('/^[a-z0-9][a-z0-9_-]{0,80}\.(png|jpe?g|gif|webp)$/i', $nom);
+}
+
+/** @return string[] images disponibles */
+function ins_images(): array
+{
+    $res = [];
+    foreach (glob(INS_PRIVE . '/images/*') ?: [] as $f) {
+        if (is_file($f) && ins_image_valide(basename($f))) {
+            $res[] = basename($f);
+        }
+    }
+    sort($res, SORT_NATURAL | SORT_FLAG_CASE);
+    return $res;
+}
+
+/**
+ * Enregistre une image envoyée : type lu dans le contenu (pas dans le nom), PNG / JPEG / GIF / WebP seulement,
+ * 1 Mo et 4000 × 4000 au plus ; le nom est nettoyé et l'extension fixée par le serveur.
+ * @return string nom de l'image enregistrée
+ */
+function ins_enregistrer_image(string $tmp, string $nomOrigine): string
+{
+    if (!is_file($tmp) || filesize($tmp) > 1024 * 1024) {
+        throw new RuntimeException(t('img_trop_grosse'));
+    }
+    $info = @getimagesize($tmp);
+    if (!$info || !isset(INS_TYPES_IMAGE[$info[2]])) {
+        throw new RuntimeException(t('img_type'));
+    }
+    if ($info[0] < 1 || $info[1] < 1 || $info[0] > 4000 || $info[1] > 4000) {
+        throw new RuntimeException(t('img_dimensions'));
+    }
+    $ext = INS_TYPES_IMAGE[$info[2]];
+    $base = pathinfo($nomOrigine, PATHINFO_FILENAME);
+    $base = strtolower(function_exists('iconv') ? (string)@iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $base) : $base);
+    $base = trim((string)preg_replace('/[^a-z0-9]+/', '-', $base), '-') ?: 'image';
+    $base = substr($base, 0, 60);
+    $dir = ins_dossier_images();
+    $nom = $base . '.' . $ext;
+    for ($i = 2; is_file($dir . '/' . $nom); $i++) {
+        $nom = $base . '-' . $i . '.' . $ext;
+    }
+    if (!@move_uploaded_file($tmp, $dir . '/' . $nom) && !@rename($tmp, $dir . '/' . $nom)) {
+        throw new RuntimeException(t('err_ecriture', ['fichier' => $nom]));
+    }
+    return $nom;
+}
+
+/** Envoie une image de prive/images/ au navigateur (appelé par index.php?image=…), avec mise en cache. */
+function ins_servir_image(string $nom): void
+{
+    $f = INS_PRIVE . '/images/' . $nom;
+    if (!ins_image_valide($nom) || !is_file($f)) {
+        http_response_code(404);
+        exit;
+    }
+    $ext = strtolower(pathinfo($nom, PATHINFO_EXTENSION));
+    $etag = '"' . substr(sha1($nom . filemtime($f) . filesize($f)), 0, 16) . '"';
+    header('Content-Type: ' . INS_MIME_IMAGE[$ext]);
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; sandbox");
+    header('Cache-Control: public, max-age=2592000');
+    header('ETag: ' . $etag);
+    if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+        http_response_code(304);
+        exit;
+    }
+    header('Content-Length: ' . filesize($f));
+    readfile($f);
+    exit;
+}
+
+/** Taille de fichier lisible : 12 Ko, 1,2 Mo. */
+function ins_taille_lisible(int $o): string
+{
+    if ($o < 1024 * 1024) {
+        return t('taille_ko', ['n' => max(1, (int)round($o / 1024))]);
+    }
+    return t('taille_mo', ['n' => number_format($o / 1048576, 1, t('decimale'), '')]);
+}
+
+/** Adresse d'une image (relative à index.php / admin.php), avec un repère de version pour le cache. */
+function ins_url_image(string $nom): string
+{
+    $f = INS_PRIVE . '/images/' . $nom;
+    return 'index.php?' . http_build_query(['image' => $nom, 'v' => is_file($f) ? substr(sha1((string)filemtime($f)), 0, 8) : '0']);
+}
+
+/** Logo à afficher : celui du formulaire, sinon celui du site (config.php) ; « non » = aucun. Null si absent. */
+function ins_logo(?array $form = null): ?array
+{
+    $cfg = ins_config();
+    $nom = $form !== null ? $form['logo'] : '';
+    $texte = $form !== null ? $form['logo_texte'] : '';
+    if ($nom === 'non') {
+        return null;
+    }
+    if ($nom === '') {
+        $nom = (string)$cfg['logo'];
+        $texte = $texte !== '' ? $texte : (string)$cfg['logo_texte'];
+    }
+    if ($nom === '' || !ins_image_valide($nom) || !is_file(INS_PRIVE . '/images/' . $nom)) {
+        return null;
+    }
+    return ['nom' => $nom, 'texte' => $texte];
+}
+
+/** En-tête de page : logo à gauche du titre. */
+function ins_tete(string $titre, ?array $form = null): string
+{
+    $logo = ins_logo($form);
+    if ($logo === null) {
+        return '<h1>' . e($titre) . '</h1>';
+    }
+    return '<header class="tete"><img src="' . e(ins_url_image($logo['nom'])) . '" alt="' . e($logo['texte']) . '"><h1>' . e($titre) . '</h1></header>';
 }
 
 /* ------------------------------------------------------------------ */
@@ -1992,6 +2347,10 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             $h .= ins_rendu_commande($c, $q, $erreurs[$nom] ?? '', $si);
             continue;
         }
+        if ($c['type'] === 'grille') {
+            $h .= ins_rendu_grille($c, $premier ? ($reponseExistante ?? []) : null, is_array($brut[$nom] ?? null) ? $brut[$nom] : [], $erreurs[$nom] ?? '', $si);
+            continue;
+        }
         if ($premier && $reponseExistante !== null && array_key_exists($nom, $reponseExistante)) {
             $b = $reponseExistante[$nom]; // réponse précédente, ou valeur connue grâce à l'accès
         } else {
@@ -2076,6 +2435,53 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
     return $h;
 }
 
+/**
+ * Champ « grille » : un tableau, une ligne par question (Vendredi, Samedi…), une colonne par réponse (Oui, Non) ;
+ * boutons radio (une réponse par ligne) ou cases à cocher (multiple = oui). Sur téléphone, les lignes s'empilent.
+ * $existante : réponse enregistrée (colonnes <nom>_<repère>) au premier affichage ; $saisie : saisie renvoyée.
+ */
+function ins_rendu_grille(array $c, ?array $existante, array $saisie, string $err, string $si): string
+{
+    $nom = $c['nom'];
+    $idh = 'c_' . $nom;
+    $req = $c['obligatoire'] ? ' <span class="req" title="' . e(t('obligatoire')) . '">*</span>' : '';
+    $h = '<div class="champ' . ($err !== '' ? ' erreur' : '') . '" data-nom="' . e($nom) . '" data-type="grille"' . $si . '>'
+        . '<fieldset style="border:0;margin:0;padding:0"' . ($err !== '' ? ' aria-describedby="' . $idh . '_e"' : '') . '>'
+        . '<legend class="lib">' . e($c['libelle']) . $req . '</legend>';
+    if ($c['aide'] !== '') {
+        $h .= '<div class="aide">' . nl2br(e($c['aide'])) . '</div>';
+    }
+    $h .= '<table class="grille"><thead><tr><td></td>';
+    foreach ($c['options_aff'] as $o) {
+        $h .= '<th scope="col">' . e($o) . '</th>';
+    }
+    $h .= '</tr></thead><tbody>';
+    foreach ($c['lignes_id'] as $i => $idl) {
+        if ($existante !== null) {
+            $v = (string)($existante[$nom . '_' . $idl] ?? '');
+            $sel = $v === '' ? [] : array_map('trim', explode('|', $v));
+        } else {
+            $b = $saisie[$idl] ?? null;
+            $sel = is_array($b) ? array_values(array_filter($b, 'is_string')) : (is_string($b) ? [$b] : []);
+        }
+        $libLigne = (string)($c['lignes'][$i] ?? $idl);
+        $manque = $err !== '' && !$sel;
+        $h .= '<tr' . ($manque ? ' class="manque"' : '') . '><th scope="row" id="' . e($idh . '_' . $idl) . '">' . e($libLigne) . '</th>';
+        foreach ($c['options'] as $k => $opt) {
+            $aff = (string)$c['options_aff'][$k];
+            $h .= '<td><label class="opt"><input type="' . ($c['multiple'] ? 'checkbox' : 'radio') . '" name="' . e($nom . '[' . $idl . ']' . ($c['multiple'] ? '[]' : '')) . '"'
+                . ' value="' . e($opt) . '"' . (in_array($opt, $sel, true) ? ' checked' : '') . ' aria-label="' . e($libLigne . ' : ' . $aff) . '">'
+                . '<span class="grille-m" aria-hidden="true">' . e($aff) . '</span></label></td>';
+        }
+        $h .= '</tr>';
+    }
+    $h .= '</tbody></table></fieldset>';
+    if ($err !== '') {
+        $h .= '<div class="msg" id="' . $idh . '_e">' . e($err) . '</div>';
+    }
+    return $h . '</div>';
+}
+
 /** Script de l'affichage conditionnel (« si = »). */
 function ins_script_conditions(): string
 {
@@ -2099,12 +2505,34 @@ function ins_script_conditions(): string
     });
     return res.map(function (v) { return v.trim().toLowerCase(); });
   }
+  // Nombres (virgule ou point) et dates AAAA-MM-JJ ; saisie vide ou illisible : condition fausse
+  function lire(genre, v) {
+    v = String(v).trim();
+    if (genre === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    return /^-?\d+([.,]\d+)?$/.test(v) ? parseFloat(v.replace(',', '.')) : null;
+  }
+  function comparer(c, saisie) {
+    var x = lire(c.num, saisie);
+    if (x === null) return false;
+    var r = c.valeurs.map(function (y) { y = lire(c.num, y); return y === null ? null : (x < y ? -1 : x > y ? 1 : 0); })
+      .filter(function (d) { return d !== null; });
+    if (!r.length) return false;
+    switch (c.op) {
+      case '=': return r.indexOf(0) >= 0;
+      case '!=': return r.indexOf(0) < 0;
+      case '<': return r[0] < 0;
+      case '<=': return r[0] <= 0;
+      case '>': return r[0] > 0;
+      default: return r[0] >= 0;
+    }
+  }
   function maj() {
     blocs.forEach(function (bloc) {
       var conds = JSON.parse(bloc.getAttribute('data-si')), vis = true;
       conds.forEach(function (c) {
         var v = valeurs(c.champ);
         if (v === null) { vis = false; return; }
+        if (c.num) { if (!comparer(c, v[0] || '')) vis = false; return; }
         var trouve = c.valeurs.some(function (x) { return v.indexOf(x.toLowerCase()) >= 0; });
         if (trouve !== c.egal) vis = false;
       });
@@ -2113,6 +2541,7 @@ function ins_script_conditions(): string
     });
   }
   form.addEventListener('change', maj);
+  form.addEventListener('input', maj); // nombres et dates : pendant la frappe
   maj(); maj(); // deux passes pour les dépendances en chaîne
 })();
 </script>
@@ -2135,6 +2564,7 @@ const INS_PROPRIETES_TYPE = [
     'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
+    'grille'     => ['aide', 'obligatoire', 'lignes', 'options', 'multiple'],
     'case'       => ['aide', 'obligatoire', 'defaut'],
     'commande'   => ['aide', 'obligatoire', 'catalogue'],
     'titre'      => [],
@@ -2145,7 +2575,7 @@ const INS_PROPRIETES_TYPE = [
 function ins_modele(array $form): array
 {
     $g = [];
-    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
         $g[$k] = (string)$form[$k];
     }
     // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
@@ -2165,7 +2595,8 @@ function ins_modele(array $form): array
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
-            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
+            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'],
+            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'trad' => (object)$c['trad'],
         ];
     }
@@ -2251,6 +2682,16 @@ function ins_modele_vers_ini(string $id, array $m): string
         }
         $ecrire($l, $k, ins_modele_texte($g[$k] ?? ''), $tr);
     }
+    $logo = ins_modele_texte($g['logo'] ?? '');
+    if ($logo !== '' && $logo !== 'non' && !ins_image_valide($logo)) {
+        throw new RuntimeException(t('err_logo', ['f' => "$id.ini", 'logo' => $logo]));
+    }
+    $ecrire($l, 'logo', $logo);
+    $tr = [];
+    foreach ($autres as $lg) {
+        $tr[$lg] = $trad($g['trad'] ?? [], $lg, 'logo_texte');
+    }
+    $ecrire($l, 'logo_texte', ins_modele_texte($g['logo_texte'] ?? ''), $tr);
     $fichier = ins_modele_texte($g['fichier'] ?? '');
     if ($fichier !== '' && $fichier !== $id) {
         $ecrire($l, 'fichier', $fichier);
@@ -2317,7 +2758,12 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
             $ecrire($l, 'catalogue', $cat);
         }
-        if (in_array('options', $props, true)) {
+        if (in_array('lignes', $props, true)) {
+            $ecrire($l, 'lignes', ins_modele_liste($c['lignes'] ?? []), $tr('lignes'));
+        }
+        if (in_array('options', $props, true) && $type === 'grille') {
+            $ecrire($l, 'colonnes', ins_modele_liste($c['options'] ?? []), $tr('options'));
+        } elseif (in_array('options', $props, true)) {
             $opts = ins_modele_liste($c['options'] ?? []);
             if (!($type === 'echelle' && $opts === ['1', '2', '3', '4', '5'])) {
                 $ecrire($l, 'options', $opts, $tr('options'));
@@ -2340,6 +2786,9 @@ function ins_modele_vers_ini(string $id, array $m): string
         if (in_array('unique', $props, true) && !empty($c['unique'])) {
             $l[] = 'unique = oui';
         }
+        if (in_array('multiple', $props, true) && !empty($c['multiple'])) {
+            $l[] = 'multiple = oui';
+        }
         $conds = [];
         foreach (is_array($c['si'] ?? null) ? $c['si'] : [] as $cond) {
             if (!is_array($cond)) {
@@ -2352,6 +2801,11 @@ function ins_modele_vers_ini(string $id, array $m): string
             }
             if (($types[$cible] ?? '') === 'case') {
                 $vals = array_map(function ($v) { return ins_oui($v) ? 'oui' : 'non'; }, $vals);
+            }
+            $op = ins_modele_texte($cond['op'] ?? '');
+            if (in_array($op, ['<', '<=', '>', '>='], true)) {
+                $conds[] = $cible . ' ' . $op . ' ' . $vals[0];
+                continue;
             }
             $conds[] = $cible . (empty($cond['egal']) ? ' != ' : ' = ') . implode(' | ', $vals);
         }
@@ -2375,7 +2829,7 @@ function ins_apercu_document(array $form, string $langue, string $choisi = ''): 
         . '.bandeau{font-size:.8rem;color:#57606a;border-bottom:1px dashed #c9d2dc;padding:.2rem 0;margin-bottom:.5rem}</style></head><body><main>';
     $h .= '<div class="bandeau" lang="' . e($avant) . '">' . e($bandeau) . '</div>';
     $h .= ins_liens_langues($f['langues'], $lg);
-    $h .= '<h1>' . e($f['titre']) . '</h1>';
+    $h .= ins_tete($f['titre'], $f);
     if ($noteAcces !== '') {
         $h .= '<p class="petit" lang="' . e($avant) . '">' . e($noteAcces) . '</p>';
     }
@@ -2472,6 +2926,11 @@ textarea{min-height:6rem;resize:vertical}
 .echelle .notes{display:flex;flex-wrap:wrap;gap:.2rem}
 .echelle .opt{flex-direction:column;align-items:center;gap:0;margin:0;min-width:2.4rem}
 .echelle .bouts{display:flex;justify-content:space-between;gap:1rem;font-size:.88rem;color:#57606a;margin-top:.2rem}
+.vignettes{display:flex;flex-wrap:wrap;gap:1rem;margin:.5rem 0}.vignettes figure{margin:0;width:13rem}
+.vignettes img{max-width:100%;max-height:6rem;background:#fff;border:1px solid #ddd;padding:.3rem}
+.tete{display:flex;align-items:center;gap:1rem;margin:.5rem 0 1rem}
+.tete img{max-height:80px;max-width:35%;height:auto;width:auto;flex:none}
+.tete h1{margin:0}
 .lien{display:flex;gap:.4rem;align-items:center;margin:.4rem 0}
 table.cmd{font-size:.95rem}
 table.cmd td,table.cmd th{border-left:0;border-right:0}
@@ -2495,6 +2954,14 @@ td code{white-space:nowrap}
 td.actions form{display:block;margin:.15rem 0}
 td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
-@media (max-width:30rem){table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
+table.grille{width:auto;max-width:100%;background:transparent;font-size:inherit;margin:.3rem 0}
+table.grille th,table.grille td{position:static;background:transparent;border:0;border-bottom:1px solid #e3e8ee;padding:.35rem .7rem;text-align:center;font-weight:normal}
+table.grille thead th{font-weight:600;font-size:.9rem}
+table.grille tbody th{text-align:left;padding-left:0}
+table.grille label.opt{display:inline-flex;margin:0;padding:.2rem;justify-content:center}
+table.grille .grille-m{display:none}
+table.grille tr.manque th{color:#b42318;font-weight:600}
+@media (max-width:30rem){table.grille thead{display:none}table.grille,table.grille tbody,table.grille tr{display:block}table.grille tr{padding:.35rem 0;border-bottom:1px solid #e3e8ee}table.grille th,table.grille td{display:inline-block;border:0;padding:.15rem .9rem .15rem 0}table.grille tbody th{display:block;font-weight:600}table.grille .grille-m{display:inline;margin-left:.3rem}table.grille label.opt{justify-content:flex-start}}
+@media (max-width:30rem){.tete{gap:.6rem}.tete img{max-height:56px}table.cmd input.cmd-q{width:3.6rem}table.cmd td,table.cmd th{padding:.3rem .25rem}table.cmd{font-size:.9rem}.echelle .notes{gap:0}.echelle .opt{min-width:1.6rem}main{padding-left:.6rem;padding-right:.6rem}.champ{padding:.7rem .7rem}}
 CSS;
 }

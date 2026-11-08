@@ -61,7 +61,8 @@
   }
   var DECORATIFS = ['titre', 'info'];
   var A_OPTIONS = ['choix', 'liste', 'cases', 'echelle'];
-  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case'];
+  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'date'];
+  var COMPARAISONS = ['<', '<=', '>', '>='];
 
   /* ---------- État ---------- */
   var S = {
@@ -300,6 +301,7 @@
       unique: false, exemple: '', gauche: '', droite: '', si: [], trad: {}, _auto: true };
     if (['choix', 'liste', 'cases'].indexOf(type) >= 0) c.options = [T('edi_option') + ' 1', T('edi_option') + ' 2'];
     if (type === 'echelle') c.options = ['1', '2', '3', '4', '5'];
+    if (type === 'grille') { c.lignes = [T('edi_ligne') + ' 1', T('edi_ligne') + ' 2']; c.options = [T('edi_grille_oui'), T('edi_grille_non')]; c.multiple = false; }
     if (type === 'commande') { c.catalogue = D.catalogues[0] || ''; c.libelle = T('edi_nouveau_commande'); }
     c.nom = nomUnique(type === 'titre' ? 'section' : (type === 'info' ? 'info' : versNom(c.libelle)), c);
     return c;
@@ -432,11 +434,12 @@
     }
     if (S.langueEd) {
       props.appendChild(traduisible(g, 'titre', { libelle: T('edi_titre_form') }));
+      if (g.logo !== 'non' && (g.logo || D.logo_site)) props.appendChild(traduisible(g, 'logo_texte', { libelle: T('edi_logo_texte') }));
       textes();
       return;
     }
     // Sommaire : accès direct à chaque groupe de réglages (le panneau défile)
-    var groupes = [['acces', T('edi_acces_groupe')], ['textes', T('edi_textes')], ['periode', T('edi_periode')], ['langues', T('edi_langues')]];
+    var groupes = [['acces', T('edi_acces_groupe')], ['logo', T('edi_logo_groupe')], ['textes', T('edi_textes')], ['periode', T('edi_periode')], ['langues', T('edi_langues')]];
     props.appendChild(el('p', { classe: 'edi-sommaire' }, groupes.map(function (x, n) {
       return [n ? ' · ' : '', el('a', { href: '#', texte: x[1], onclick: function (ev) {
         ev.preventDefault();
@@ -461,6 +464,9 @@
     }
     props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
+
+    titreGroupe('logo', T('edi_logo_groupe'));
+    reglageLogo(g);
 
     titreGroupe('textes', T('edi_textes'));
     textes();
@@ -495,6 +501,34 @@
     props.appendChild(avance);
   }
 
+  /** Logo à gauche du titre : logo du site, aucun, ou une image de prive/images/ (envoi possible d'ici). */
+  function reglageLogo(g) {
+    var site = D.logo_site ? T('edi_logo_site', { nom: D.logo_site }) : T('edi_logo_site_aucun');
+    var vals = [['', site], ['non', T('edi_logo_aucun')]].concat(D.images.map(function (n) { return [n, n]; }));
+    if (g.logo && g.logo !== 'non' && D.images.indexOf(g.logo) < 0) vals.push([g.logo, g.logo + ' ⚠']);
+    props.appendChild(choixListe(g, 'logo', vals, T('edi_logo'), dessinerProps));
+    var fichier = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', id: 'p-logo-envoi' });
+    var etat = el('div', { classe: 'msg' });
+    fichier.addEventListener('change', function () {
+      if (!fichier.files.length) return;
+      var fd = new FormData();
+      fd.append('action', 'editeur_image');
+      fd.append('image', fichier.files[0]);
+      etat.textContent = T('edi_logo_envoi');
+      envoyer(fd).then(function (r) {
+        if (!r.ok) { etat.textContent = r.erreur; return; }
+        D.images = r.images;
+        g.logo = r.nom;
+        marquerModifie(); dessinerProps(); planifierApercu(0);
+      }).catch(function () { etat.textContent = T('edi_err_reseau'); });
+    });
+    props.appendChild(ligne(T('edi_logo_ajouter'), fichier, T('edi_logo_aide'), 'p-logo-envoi'));
+    props.appendChild(etat);
+    if (g.logo !== 'non' && (g.logo || D.logo_site)) {
+      props.appendChild(traduisible(g, 'logo_texte', { libelle: T('edi_logo_texte'), aide: T('edi_logo_texte_aide') }));
+    }
+  }
+
   function dessinerChamp(c) {
     var deco = DECORATIFS.indexOf(c.type) >= 0;
     var p = D.proprietes[c.type] || [];
@@ -524,10 +558,19 @@
       props.appendChild(choixListe(c, 'type', D.types.map(function (t) { return [t, T('type_' + t)]; }), T('edi_type'), function () {
         if (['choix', 'liste', 'cases'].indexOf(c.type) >= 0 && !(c.options || []).length) c.options = [T('edi_option') + ' 1', T('edi_option') + ' 2'];
         if (c.type === 'echelle' && !(c.options || []).length) c.options = ['1', '2', '3', '4', '5'];
+        if (c.type === 'grille') {
+          if (!(c.lignes || []).length) c.lignes = [T('edi_ligne') + ' 1', T('edi_ligne') + ' 2'];
+          if (!(c.options || []).length) c.options = [T('edi_grille_oui'), T('edi_grille_non')];
+        }
         dessinerListe(); dessinerProps();
       }));
     }
-    if (p.indexOf('options') >= 0) {
+    if (p.indexOf('lignes') >= 0) {
+      props.appendChild(traduisible(c, 'lignes', { libelle: T('edi_lignes'), long: true, rows: 4, liste: true, aide: T('edi_lignes_aide') }));
+    }
+    if (p.indexOf('options') >= 0 && c.type === 'grille') {
+      props.appendChild(traduisible(c, 'options', { libelle: T('edi_colonnes'), long: true, rows: 3, liste: true, aide: T('edi_options_aide') }));
+    } else if (p.indexOf('options') >= 0) {
       props.appendChild(traduisible(c, 'options', { libelle: T('edi_options'), long: true, rows: 5, liste: true,
         aide: c.type === 'echelle' ? T('edi_options_echelle') : T('edi_options_aide'), apres: optionsModifiees(c) }));
     }
@@ -548,6 +591,7 @@
 
     if (p.indexOf('obligatoire') >= 0) props.appendChild(caseCocher(c, 'obligatoire', c.type === 'case' ? T('edi_obligatoire_case') : T('edi_obligatoire'), dessinerListe));
     if (p.indexOf('unique') >= 0) props.appendChild(caseCocher(c, 'unique', T('edi_unique')));
+    if (p.indexOf('multiple') >= 0) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
     if (p.indexOf('min') >= 0) {
       var tp = c.type === 'date' ? 'date' : 'number';
       var lib = c.type === 'nombre' ? ['edi_val_min', 'edi_val_max'] : c.type === 'date' ? ['edi_date_min', 'edi_date_max'] : ['edi_long_min', 'edi_long_max'];
@@ -602,12 +646,33 @@
           return el('option', { value: x.nom, texte: x.libelle || x.nom });
         })));
       sCible.value = k.champ;
-      sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
-      var sOp = el('select', { 'aria-label': T('edi_cond_op') }, el('option', { value: '1', texte: T('edi_cond_est') }), el('option', { value: '0', texte: T('edi_cond_nest_pas') }));
-      sOp.value = k.egal ? '1' : '0';
-      sOp.addEventListener('change', function () { k.egal = sOp.value === '1'; marquerModifie(); planifierApercu(0); });
+      sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; k.op = '='; k.egal = true; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
+      // Opérateurs : « est parmi / n'est pas parmi » pour les choix ; =, ≠, <, ≤, >, ≥ pour les nombres et les dates
+      var typeC = cible ? cible.type : '';
+      var numerique = typeC === 'nombre' || typeC === 'date';
+      var opsComp = [['<', T('edi_cond_inf')], ['<=', T('edi_cond_inf_egal')], ['>', T('edi_cond_sup')], ['>=', T('edi_cond_sup_egal')]];
+      var ops = numerique ? [['=', T('edi_cond_egal')], ['!=', T('edi_cond_different')]].concat(opsComp)
+        : [['est', T('edi_cond_est')], ['nest', T('edi_cond_nest_pas')]].concat(typeC === 'echelle' ? opsComp : []);
+      var sOp = el('select', { 'aria-label': T('edi_cond_op') }, ops.map(function (o) { return el('option', { value: o[0], texte: o[1] }); }));
+      var comparaison = COMPARAISONS.indexOf(k.op) >= 0;
+      sOp.value = comparaison ? k.op : numerique ? (k.egal ? '=' : '!=') : (k.egal ? 'est' : 'nest');
+      sOp.addEventListener('change', function () {
+        var v = sOp.value, avant = COMPARAISONS.indexOf(k.op) >= 0 || numerique;
+        k.op = v === 'est' ? '=' : v === 'nest' ? '!=' : v;
+        k.egal = k.op !== '!=';
+        if (avant !== (COMPARAISONS.indexOf(k.op) >= 0 || numerique)) k.valeurs = []; // liste de choix ⇄ valeur saisie
+        marquerModifie(); dessinerProps(); planifierApercu(0);
+      });
       var vals = el('div', { classe: 'edi-cond-valeurs' });
-      var choix = !cible ? [] : cible.type === 'case' ? [['1', T('edi_coche')], ['0', T('edi_non_coche')]] : (cible.options || []).map(function (o) { return [o, o]; });
+      if (cible && (numerique || comparaison)) {
+        var zVal = el('input', { type: typeC === 'date' ? 'date' : 'text', inputmode: typeC === 'date' ? null : 'decimal',
+          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' ? '' : '4' });
+        zVal.style.width = '10rem';
+        zVal.addEventListener('input', function () { var v = zVal.value.trim(); k.valeurs = v ? [v] : []; marquerModifie(); planifierApercu(); });
+        vals.appendChild(zVal);
+        vals.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_cond_vide') }));
+      }
+      var choix = !cible || numerique || comparaison ? [] : cible.type === 'case' ? [['1', T('edi_coche')], ['0', T('edi_non_coche')]] : (cible.options || []).map(function (o) { return [o, o]; });
       choix.forEach(function (o) {
         var cc = el('input', { type: 'checkbox' });
         cc.checked = k.valeurs.indexOf(o[0]) >= 0;
@@ -626,7 +691,7 @@
     if (cibles.length) {
       bloc.appendChild(el('button', { type: 'button', classe: 'sec', texte: '+ ' + T('edi_cond_ajouter'), onclick: function () {
         c.si = c.si || [];
-        c.si.push({ champ: cibles[cibles.length - 1].nom, egal: true, valeurs: [] });
+        c.si.push({ champ: cibles[cibles.length - 1].nom, op: '=', egal: true, valeurs: [] });
         marquerModifie(); dessinerProps(); dessinerListe();
       } }));
     } else {
