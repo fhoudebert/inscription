@@ -95,7 +95,8 @@ Réglages de la section `[formulaire]` :
 | `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
 | `lignes`, `colonnes` | pour `grille` : questions (lignes) et réponses possibles (colonnes), séparées par `\|` |
 | `multiple`    | pour `grille` : `oui` = cases à cocher, plusieurs réponses par ligne |
-| `saisie`      | pour `grille` : `nombre`, `montant` ou `texte` = une zone à remplir par case au lieu d'un choix (voir [Grille de saisie](#grille-de-saisie)) |
+| `saisie`      | pour `grille` : `nombre`, `montant`, `texte` ou `liste` = une zone à remplir (ou une liste déroulante) par case au lieu d'un choix (voir [Grille de saisie](#grille-de-saisie)) |
+| `valeurs`     | pour `grille` avec `saisie = liste` : choix proposés dans chaque liste déroulante, séparés par `\|` |
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
@@ -206,6 +207,23 @@ min      = 0
 - `saisie = montant` affiche la devise et enregistre `12,50` ; `saisie = texte` : texte court ;
 - notification et confirmation : « Samedi midi : Végétarien 2, Classique 3 » ;
 - sur téléphone, chaque ligne s'affiche avec ses zones et le nom de leur colonne.
+
+Avec `saisie = liste`, chaque case est une **liste déroulante** ; ses choix se donnent dans `valeurs` (les `colonnes`
+restent les en-têtes du tableau) :
+
+```ini
+[ateliers]
+type     = grille
+saisie   = liste
+libelle  = "Ateliers souhaités"
+lignes   = "Samedi | Dimanche"
+colonnes = "Matin | Après-midi"
+valeurs  = "Poterie | Vannerie | Randonnée | Chant"
+```
+
+- chaque liste commence par « — » (aucun choix) ; une colonne du fichier par case (`ateliers_samedi_matin`…), contenant le choix ;
+- seuls les choix de `valeurs` sont acceptés ; `obligatoire = oui` : au moins une case choisie ;
+- multilingue : `valeurs_en`, avec autant d'éléments que `valeurs` (le choix est enregistré dans la langue de base).
 
 ## Total calculé
 

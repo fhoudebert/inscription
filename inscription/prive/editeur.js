@@ -589,7 +589,13 @@
     }
     if (p.indexOf('saisie') >= 0) {
       props.appendChild(choixListe(c, 'saisie', [['', T('edi_saisie_choix')], ['nombre', T('edi_saisie_nombre')],
-        ['montant', T('edi_saisie_montant')], ['texte', T('edi_saisie_texte')]], T('edi_saisie'), dessinerProps));
+        ['montant', T('edi_saisie_montant')], ['texte', T('edi_saisie_texte')], ['liste', T('edi_saisie_liste')]], T('edi_saisie'), function () {
+          if (c.saisie === 'liste' && !(c.valeurs || []).length) c.valeurs = [T('edi_grille_oui'), T('edi_grille_non')];
+          dessinerProps();
+        }));
+      if (c.saisie === 'liste') {
+        props.appendChild(traduisible(c, 'valeurs', { libelle: T('edi_valeurs_liste'), long: true, rows: 3, liste: true, aide: T('edi_valeurs_liste_aide') }));
+      }
     }
     if (p.indexOf('lignes') >= 0) {
       props.appendChild(traduisible(c, 'lignes', { libelle: T('edi_lignes'), long: true, rows: 4, liste: true, aide: T('edi_lignes_aide') }));

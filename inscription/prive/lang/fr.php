@@ -579,7 +579,7 @@ return [
     'edi_montant_max'      => 'Montant maximal',
     'edi_heure_min'        => 'Heure au plus tôt',
     'edi_heure_max'        => 'Heure au plus tard',
-    'err_grille_saisie'    => '{f} : [{nom}] saisie = « {saisie} » : valeurs possibles nombre, montant ou texte (sans saisie : grille de choix)',
+    'err_grille_saisie'    => '{f} : [{nom}] saisie = « {saisie} » : valeurs possibles nombre, montant, texte ou liste (sans saisie : grille de choix)',
     'v_grille_une_case'    => 'Remplissez au moins une case.',
     'edi_saisie'           => 'Contenu des cases',
     'edi_saisie_choix'     => 'Choix (boutons ou cases à cocher)',
@@ -594,4 +594,8 @@ return [
     'err_calcul_champ'     => '{f} : [{nom}] calcul : [{champ}] doit être un champ nombre, montant ou total décrit avant',
     'edi_calcul'           => 'Calcul',
     'edi_calcul_aide'      => 'Termes « champ * prix unitaire » séparés par + ou - (un nombre seul = frais fixes). Champs utilisables : {champs}. Le total est recalculé à l\'envoi.',
+    'err_grille_valeurs'   => '{f} : [{nom}] grille à listes déroulantes (saisie = liste) : indiquez les choix des listes, par exemple valeurs = "Poterie | Vannerie | Randonnée"',
+    'edi_saisie_liste'     => 'Liste déroulante',
+    'edi_valeurs_liste'    => 'Choix des listes déroulantes (un par ligne)',
+    'edi_valeurs_liste_aide' => 'Les mêmes choix dans chaque case ; les colonnes restent les en-têtes du tableau.',
 ];

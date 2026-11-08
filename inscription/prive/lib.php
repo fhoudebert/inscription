@@ -25,7 +25,7 @@ const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'lo
 // Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
 const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
 const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
-const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes'];
+const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes', 'valeurs'];
 const INS_TYPES = [
     'texte', 'texte_long', 'email', 'telephone', 'nombre', 'montant', 'date', 'heure',
     'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'total', 'titre', 'info',
@@ -68,6 +68,7 @@ const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
     'obligatoire' => ['obligatoire', 'required'], 'options' => ['options', 'colonnes', 'columns'], 'defaut' => ['defaut', 'default'],
     'lignes' => ['lignes', 'rows'], 'multiple' => ['multiple'], 'saisie' => ['saisie', 'cellule', 'input', 'cell'],
+    'valeurs' => ['valeurs', 'values', 'choix_liste'],
     'calcul' => ['calcul', 'formule', 'formula', 'calculation'],
     'min' => ['min', 'minimum'], 'max' => ['max', 'maximum'], 'entier' => ['entier', 'integer'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
@@ -351,6 +352,9 @@ function ins_resume_grille(array $c, array $valeurs): string
         }
         if ($c['saisie'] === 'montant') {
             $v .= ' ' . ins_config()['devise'];
+        } elseif ($c['saisie'] === 'liste') {
+            $i = array_search($v, $c['valeurs'], true);
+            $v = $i === false ? $v : (string)($c['valeurs_aff'][$i] ?? $v);
         }
         $parLigne[$cel['l']][] = $cel['k'] === null ? $v : ($c['options_aff'][$cel['k']] ?? $c['options'][$cel['k']]) . ' ' . $v;
     }
@@ -384,6 +388,9 @@ function ins_cellules_grille(array $c): array
 /** Champ fictif pour contrôler une case d'une grille de saisie (nombre, montant, texte). */
 function ins_champ_cellule(array $c): array
 {
+    if ($c['saisie'] === 'liste') {
+        return ['type' => 'liste', 'options' => $c['valeurs']] + $c;
+    }
     return ['type' => $c['saisie']] + $c;
 }
 
@@ -567,9 +574,15 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             $options = ['1', '2', '3', '4', '5'];
         }
         $saisie = $type === 'grille' ? ins_minuscules(trim((string)$lc('saisie'))) : '';
-        $saisie = ['number' => 'nombre', 'amount' => 'montant', 'text' => 'texte', 'choix' => '', 'choice' => ''][$saisie] ?? $saisie;
-        if ($saisie !== '' && !in_array($saisie, ['nombre', 'montant', 'texte'], true)) {
+        $saisie = ['number' => 'nombre', 'amount' => 'montant', 'text' => 'texte', 'choix' => '', 'choice' => '',
+            'select' => 'liste', 'list' => 'liste', 'dropdown' => 'liste'][$saisie] ?? $saisie;
+        if ($saisie !== '' && !in_array($saisie, ['nombre', 'montant', 'texte', 'liste'], true)) {
             throw new RuntimeException(t('err_grille_saisie', ['f' => $f, 'nom' => $nom, 'saisie' => $saisie]));
+        }
+        // Grille à listes déroulantes : les choix de chaque liste (valeurs = …), distincts des colonnes
+        $valeursListe = $saisie === 'liste' ? ins_liste_options((string)$lc('valeurs')) : [];
+        if ($saisie === 'liste' && !$valeursListe) {
+            throw new RuntimeException(t('err_grille_valeurs', ['f' => $f, 'nom' => $nom]));
         }
         if ($type === 'grille' && $saisie === '' && count($options) < 1) {
             throw new RuntimeException(t('err_grille_colonnes', ['f' => $f, 'nom' => $nom]));
@@ -608,6 +621,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'calcul'      => $type === 'total' ? trim((string)$lc('calcul')) : '',
             'termes'      => $type === 'total' ? ins_calcul((string)$lc('calcul'), $vus, $f, $nom) : [], // total : [champ, coefficient]
             'colonnes_id' => [],
+            'valeurs'     => $valeursListe, // grille saisie = liste : choix des listes déroulantes (traduisibles)
             'unique'      => ins_oui($lc('unique')),
             'exemple'     => trim((string)$lc('exemple')),
             'gauche'      => trim((string)$lc('gauche')),
@@ -641,11 +655,11 @@ function ins_analyser_formulaire(string $id, string $contenu): array
                 if ($v === null || $v === '') {
                     continue;
                 }
-                if ($cle === 'options' || $cle === 'lignes') {
+                if (in_array($cle, ['options', 'lignes', 'valeurs'], true)) {
                     $v = ins_liste_options($v);
-                    $attendu = $cle === 'options' ? $options : $lignes;
+                    $attendu = ['options' => $options, 'lignes' => $lignes, 'valeurs' => $valeursListe][$cle];
                     if (count($v) !== count($attendu)) {
-                        $cleTrad = $cle === 'lignes' ? 'lignes' : ($type === 'grille' ? 'colonnes' : 'options');
+                        $cleTrad = $cle !== 'options' ? $cle : ($type === 'grille' ? 'colonnes' : 'options');
                         throw new RuntimeException(t('err_liste_trad', ['f' => $f, 'nom' => $nom, 'langue' => $lg, 'n' => count($attendu), 'cle' => $cleTrad]));
                     }
                 }
@@ -1045,8 +1059,9 @@ function ins_localiser(array $form, string $langue): array
     }
     foreach ($form['champs'] as $nom => $c) {
         $c['options_aff'] = $c['options'];
+        $c['valeurs_aff'] = $c['valeurs'] ?? [];
         foreach ($c['trad'][$langue] ?? [] as $cle => $v) {
-            $c[$cle === 'options' ? 'options_aff' : $cle] = $v;
+            $c[['options' => 'options_aff', 'valeurs' => 'valeurs_aff'][$cle] ?? $cle] = $v;
         }
         $form['champs'][$nom] = $c;
     }
@@ -1376,7 +1391,7 @@ function ins_valider(array $form, array $post): array
                         if ($vc !== '') {
                             $ec = ins_verifier_format($pc, $vc);
                             if ($ec !== '' && $err === '') {
-                                $err = $c['lignes'][$cel['l']] . ($cel['k'] !== null ? ' / ' . $c['options_aff'][$cel['k']] : '') . ' : ' . $ec;
+                                $err = $c['lignes'][$cel['l']] . ($cel['k'] !== null ? ' / ' . ($c['options_aff'][$cel['k']] ?? $c['options'][$cel['k']]) : '') . ' : ' . $ec;
                             }
                             if ($ec === '' && $c['saisie'] === 'montant') {
                                 $vc = ins_nombre_csv((float)ins_montant($vc));
@@ -1462,6 +1477,8 @@ function ins_valider(array $form, array $post): array
 function ins_verifier_format(array $c, string $v): string
 {
     switch ($c['type']) {
+        case 'liste': // case d'une grille à listes déroulantes
+            return in_array($v, $c['options'], true) ? '' : t('v_choix_invalide');
         case 'email':
             return filter_var($v, FILTER_VALIDATE_EMAIL) ? '' : t('v_email');
         case 'telephone':
@@ -3046,6 +3063,18 @@ function ins_rendu_grille_saisie(array $c, ?array $existante, array $saisie, str
             $fautive = $fautive || $mauvaise;
             $libCol = $cel['k'] !== null ? (string)$cols[$cel['k']] : (string)($cols[0] ?? '');
             $mode = $c['saisie'] === 'texte' ? '' : ' inputmode="' . ($c['entier'] ? 'numeric' : 'decimal') . '"';
+            $nomCase = $nom . '[' . $idl . ']' . ($cel['idc'] !== null ? '[' . $cel['idc'] . ']' : '');
+            $aria = ' aria-label="' . e($libLigne . ($libCol !== '' ? ' : ' . $libCol : '')) . '"' . ($mauvaise ? ' aria-invalid="true"' : '');
+            if ($c['saisie'] === 'liste') {
+                $zone = '<select name="' . e($nomCase) . '" class="cellule liste"' . $aria . '><option value="">—</option>';
+                foreach ($c['valeurs'] as $k => $opt) {
+                    $zone .= '<option value="' . e($opt) . '"' . ($opt === $v ? ' selected' : '') . '>' . e((string)($c['valeurs_aff'][$k] ?? $opt)) . '</option>';
+                }
+                $zone .= '</select>';
+                $h2 = $libCol !== '' ? '<span class="grille-m" aria-hidden="true">' . e($libCol) . '</span>' : '';
+                $ligne .= '<td>' . $h2 . $zone . '</td>';
+                continue;
+            }
             $zone = '<input type="text" name="' . e($nom . '[' . $idl . ']' . ($cel['idc'] !== null ? '[' . $cel['idc'] . ']' : '')) . '" value="' . e($v) . '"'
                 . $mode . ' class="cellule ' . e($c['saisie']) . '"' . ($mauvaise ? ' aria-invalid="true"' : '')
                 . ' aria-label="' . e($libLigne . ($libCol !== '' ? ' : ' . $libCol : '')) . '">';
@@ -3152,7 +3181,7 @@ const INS_PROPRIETES_TYPE = [
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'echelle'    => ['aide', 'obligatoire', 'defaut', 'options', 'gauche', 'droite'],
     'total'      => ['aide', 'calcul'],
-    'grille'     => ['aide', 'obligatoire', 'saisie', 'lignes', 'options', 'multiple', 'min', 'max', 'entier'],
+    'grille'     => ['aide', 'obligatoire', 'saisie', 'lignes', 'options', 'valeurs', 'multiple', 'min', 'max', 'entier'],
     'case'       => ['aide', 'obligatoire', 'defaut'],
     'commande'   => ['aide', 'obligatoire', 'catalogue'],
     'titre'      => [],
@@ -3183,7 +3212,7 @@ function ins_modele(array $form): array
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'], 'entier' => (bool)$c['entier'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
-            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'], 'saisie' => $c['saisie'], 'calcul' => $c['calcul'],
+            'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'], 'saisie' => $c['saisie'], 'calcul' => $c['calcul'], 'valeurs' => array_values($c['valeurs']),
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
             'si_ou' => (bool)$c['si_ou'],
             'trad' => (object)$c['trad'],
@@ -3361,10 +3390,13 @@ function ins_modele_vers_ini(string $id, array $m): string
         }
         if (in_array('saisie', $props, true)) {
             $sa = ins_modele_texte($c['saisie'] ?? '');
-            if ($sa !== '' && !in_array($sa, ['nombre', 'montant', 'texte'], true)) {
+            if ($sa !== '' && !in_array($sa, ['nombre', 'montant', 'texte', 'liste'], true)) {
                 throw new RuntimeException(t('err_grille_saisie', ['f' => "$id.ini", 'nom' => $nom, 'saisie' => $sa]));
             }
             $ecrire($l, 'saisie', $sa);
+        }
+        if (in_array('valeurs', $props, true) && ins_modele_texte($c['saisie'] ?? '') === 'liste') {
+            $ecrire($l, 'valeurs', ins_modele_liste($c['valeurs'] ?? []), $tr('valeurs'));
         }
         if (in_array('lignes', $props, true)) {
             $ecrire($l, 'lignes', ins_modele_liste($c['lignes'] ?? []), $tr('lignes'));
@@ -3584,6 +3616,8 @@ table.grille.saisie td{text-align:left}
 table.grille.saisie th,table.grille.saisie td{vertical-align:middle}
 table.grille input.cellule{width:6rem;padding:.35rem .5rem;text-align:right}
 table.grille input.cellule.texte{width:12rem;text-align:left}
+table.grille select.cellule{width:auto;min-width:8rem;max-width:16rem;padding:.35rem .5rem}
+table.grille select[aria-invalid=true]{border-color:#b42318}
 table.grille .saisie-montant input{width:6rem}
 table.grille input[aria-invalid=true]{border-color:#b42318}
 @media (max-width:30rem){table.grille thead{display:none}table.grille,table.grille tbody,table.grille tr{display:block}table.grille tr{padding:.35rem 0;border-bottom:1px solid #e3e8ee}table.grille th,table.grille td{display:inline-block;border:0;padding:.15rem .9rem .15rem 0}table.grille tbody th{display:block;font-weight:600}table.grille .grille-m{display:inline;margin-left:.3rem}table.grille label.opt{justify-content:flex-start}table.grille.saisie .grille-m{display:block;margin:0 0 .15rem;font-size:.85rem}table.grille.saisie th[scope=row]{margin-bottom:.2rem}}
