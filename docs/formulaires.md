@@ -95,9 +95,29 @@ Réglages de la section `[formulaire]` :
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
-| `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` |
+| `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` (voir [Limites](#limites-min-et-max)) |
+| `entier`      | pour `nombre` : `oui` = nombre entier seulement (pas de virgule) |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+
+### Limites (min et max)
+
+```ini
+[groupe]
+type    = nombre
+libelle = "Nombre de personnes (vous compris)"
+min     = 1
+max     = 30
+entier  = oui
+```
+
+- **nombre** : `min` et `max` acceptent la virgule ou le point (`2,5`), et les nombres négatifs ; `entier = oui` refuse les
+  décimales. Les limites s'affichent sous la question (« Nombre entier. Entre 1 et 30. ») et sont vérifiées à l'envoi
+  (« Entre 1 et 30. ») ; sur téléphone, le clavier numérique s'ouvre ;
+- **date** : `min = 2026-12-01`, `max = 2026-12-31` (format `AAAA-MM-JJ`) ; le calendrier du navigateur ne propose que ces dates ;
+- **texte**, **texte_long** : nombre de caractères minimum / maximum ;
+- une seule des deux limites suffit ; une limite mal écrite, un `min` plus grand que `max` ou une valeur `defaut` hors des
+  limites rendent le formulaire invalide, avec un message qui le dit.
 | `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels

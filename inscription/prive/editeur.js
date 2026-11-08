@@ -352,7 +352,7 @@
     opts = opts || {};
     var id = 'p-' + cle + '-' + Math.random().toString(36).slice(2, 7);
     var z = el(opts.long ? 'textarea' : 'input', { id: id, type: opts.long ? null : (opts.type || 'text'), 'data-cle': cle,
-      placeholder: opts.placeholder || null, min: opts.min, max: opts.max, rows: opts.long ? (opts.rows || 3) : null });
+      placeholder: opts.placeholder || null, inputmode: opts.inputmode || null, min: opts.min, max: opts.max, rows: opts.long ? (opts.rows || 3) : null });
     var v = obj[cle];
     z.value = Array.isArray(v) ? v.join('\n') : (v === undefined || v === null ? '' : String(v));
     z.addEventListener('input', function () {
@@ -608,8 +608,11 @@
     if (p.indexOf('min') >= 0) {
       var tp = c.type === 'date' ? 'date' : 'number';
       var lib = c.type === 'nombre' ? ['edi_val_min', 'edi_val_max'] : c.type === 'date' ? ['edi_date_min', 'edi_date_max'] : ['edi_long_min', 'edi_long_max'];
-      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: tp }), texte(c, 'max', { libelle: T(lib[1]), type: tp })));
+      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: c.type === 'nombre' ? 'text' : tp, inputmode: 'decimal' }),
+        texte(c, 'max', { libelle: T(lib[1]), type: c.type === 'nombre' ? 'text' : tp, inputmode: 'decimal' })));
+      if (c.type === 'nombre') props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
     }
+    if (p.indexOf('entier') >= 0) props.appendChild(caseCocher(c, 'entier', T('edi_entier')));
     if (p.indexOf('defaut') >= 0) {
       if (c.type === 'case') {
         var obj = { v: c.defaut === 'oui' || c.defaut === '1' };

@@ -65,7 +65,7 @@ const INS_CLES_CHAMP = [
     'type' => ['type'], 'libelle' => ['libelle', 'label', 'texte'], 'aide' => ['aide', 'help'],
     'obligatoire' => ['obligatoire', 'required'], 'options' => ['options', 'colonnes', 'columns'], 'defaut' => ['defaut', 'default'],
     'lignes' => ['lignes', 'rows'], 'multiple' => ['multiple'],
-    'min' => ['min'], 'max' => ['max'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
+    'min' => ['min', 'minimum'], 'max' => ['max', 'maximum'], 'entier' => ['entier', 'integer'], 'unique' => ['unique'], 'exemple' => ['exemple', 'placeholder'],
     'gauche' => ['gauche', 'left'], 'droite' => ['droite', 'right'], 'si' => ['si', 'if'],
     'catalogue' => ['catalogue', 'catalog'],
 ];
@@ -559,6 +559,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             'defaut'      => trim((string)$lc('defaut')),
             'min'         => $min !== '' ? $min : null,
             'max'         => $max !== '' ? $max : null,
+            'entier'      => $type === 'nombre' && ins_oui($lc('entier')), // nombre entier seulement
             'unique'      => ins_oui($lc('unique')),
             'exemple'     => trim((string)$lc('exemple')),
             'gauche'      => trim((string)$lc('gauche')),
@@ -607,6 +608,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             $champ['si'] = ins_conditions((string)$lc('si'), $vus, $f, $nom);
             $champ['si_ou'] = strpos((string)$lc('si'), '||') !== false;
         }
+        ins_verifier_bornes($champ, $f);
         $form['champs'][$nom] = $champ;
         if (!in_array($type, INS_TYPES_DECORATIFS, true)) {
             $vus[$nom] = $champ;
@@ -639,6 +641,68 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         throw new RuntimeException(t('err_colonne_double', ['f' => $f, 'colonne' => $doubles[0]]));
     }
     return $form;
+}
+
+/**
+ * Contrôle min / max à la lecture du descripteur : nombres (virgule ou point) pour un nombre,
+ * dates AAAA-MM-JJ pour une date, longueurs entières pour un texte ; min ≤ max ; valeur par défaut dans les bornes.
+ */
+function ins_verifier_bornes(array $c, string $f): void
+{
+    if ($c['min'] === null && $c['max'] === null) {
+        return;
+    }
+    $genre = ['nombre' => 'nombre', 'date' => 'date', 'texte' => 'longueur', 'texte_long' => 'longueur'][$c['type']] ?? '';
+    if ($genre === '') {
+        return; // min / max sans effet sur ce type
+    }
+    $lire = function ($v) use ($genre) {
+        if ($genre === 'longueur') {
+            return preg_match('/^\d+$/', trim($v)) ? (int)$v : null;
+        }
+        return ins_valeur_comparable($genre, $v);
+    };
+    $b = [];
+    foreach (['min', 'max'] as $k) {
+        if ($c[$k] === null) {
+            continue;
+        }
+        $b[$k] = $lire($c[$k]);
+        if ($b[$k] === null) {
+            throw new RuntimeException(t('err_borne_' . $genre, ['f' => $f, 'nom' => $c['nom'], 'cle' => $k, 'valeur' => $c[$k]]));
+        }
+    }
+    if (isset($b['min'], $b['max']) && $b['min'] > $b['max']) {
+        throw new RuntimeException(t('err_bornes_ordre', ['f' => $f, 'nom' => $c['nom'], 'min' => $c['min'], 'max' => $c['max']]));
+    }
+    if ($genre !== 'longueur' && $c['defaut'] !== '') {
+        $d = ins_valeur_comparable($genre, $c['defaut']);
+        if ($d === null || (isset($b['min']) && $d < $b['min']) || (isset($b['max']) && $d > $b['max'])) {
+            throw new RuntimeException(t('err_defaut_bornes', ['f' => $f, 'nom' => $c['nom'], 'defaut' => $c['defaut']]));
+        }
+    }
+}
+
+/** Bornes d'un nombre en clair, pour l'aide sous le libellé : « Entre 1 et 30 », « Au moins 1 », « Nombre entier »… */
+function ins_aide_bornes(array $c): string
+{
+    if ($c['type'] !== 'nombre') {
+        return '';
+    }
+    $f = function ($v) { return str_replace('.', t('decimale'), (string)$v); };
+    if ($c['min'] !== null && $c['max'] !== null) {
+        $txt = t('borne_entre', ['min' => $f($c['min']), 'max' => $f($c['max'])]);
+    } elseif ($c['min'] !== null) {
+        $txt = t('borne_min', ['min' => $f($c['min'])]);
+    } elseif ($c['max'] !== null) {
+        $txt = t('borne_max', ['max' => $f($c['max'])]);
+    } else {
+        $txt = '';
+    }
+    if ($c['entier']) {
+        $txt = $txt === '' ? t('borne_entier') : t('borne_entier_et', ['bornes' => $txt]);
+    }
+    return $txt;
 }
 
 function ins_date_ini($v, string $f, string $cle): ?int
@@ -1217,11 +1281,15 @@ function ins_verifier_format(array $c, string $v): string
                 return t('v_nombre');
             }
             $n = (float)str_replace(',', '.', $v);
-            if ($c['min'] !== null && $n < (float)$c['min']) {
-                return t('v_au_moins', ['n' => $c['min']]);
+            if ($c['entier'] && !preg_match('/^-?\d+$/', $v)) {
+                return t('v_entier');
             }
-            if ($c['max'] !== null && $n > (float)$c['max']) {
-                return t('v_au_plus', ['n' => $c['max']]);
+            $mini = $c['min'] !== null ? ins_valeur_comparable('nombre', (string)$c['min']) : null;
+            $maxi = $c['max'] !== null ? ins_valeur_comparable('nombre', (string)$c['max']) : null;
+            if (($mini !== null && $n < $mini) || ($maxi !== null && $n > $maxi)) {
+                $fmt = function ($x) { return str_replace('.', t('decimale'), (string)$x); };
+                return $mini !== null && $maxi !== null ? t('v_entre', ['min' => $fmt($c['min']), 'max' => $fmt($c['max'])])
+                    : ($mini !== null ? t('v_au_moins', ['n' => $fmt($c['min'])]) : t('v_au_plus', ['n' => $fmt($c['max'])]));
             }
             return '';
         case 'date':
@@ -2542,8 +2610,9 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
                 ? '<fieldset style="border:0;margin:0;padding:0"><legend class="lib">' . e($c['libelle']) . $req . '</legend>'
                 : '<label class="lib" for="' . $idh . '">' . e($c['libelle']) . $req . '</label>';
         }
-        if ($c['aide'] !== '') {
-            $h .= '<div class="aide">' . ins_texte($c['aide']) . '</div>';
+        $bornes = ins_aide_bornes($c);
+        if ($c['aide'] !== '' || $bornes !== '') {
+            $h .= '<div class="aide" id="' . $idh . '_a">' . ins_texte($c['aide']) . ($c['aide'] !== '' && $bornes !== '' ? ' — ' : '') . e($bornes) . '</div>';
         }
 
         $ph = $c['exemple'] !== '' ? ' placeholder="' . e($c['exemple']) . '"' : '';
@@ -2591,7 +2660,10 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
             default:
                 $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'date' => 'date'];
                 $tp = $types[$c['type']] ?? 'text';
-                $extra = $c['type'] === 'nombre' ? ' inputmode="decimal"' : '';
+                $extra = $c['type'] === 'nombre' ? ' inputmode="' . ($c['entier'] ? 'numeric' : 'decimal') . '"' : '';
+                if ($bornes !== '') { // bornes lues par les lecteurs d'écran avec le champ
+                    $aria = $err !== '' ? str_replace($idh . '_e"', $idh . '_e ' . $idh . '_a"', $aria) : ' aria-describedby="' . $idh . '_a"';
+                }
                 if ($c['type'] === 'date') {
                     $extra .= ($c['min'] !== null ? ' min="' . e($c['min']) . '"' : '') . ($c['max'] !== null ? ' max="' . e($c['max']) . '"' : '');
                 }
@@ -2733,7 +2805,7 @@ const INS_PROPRIETES_TYPE = [
     'texte_long' => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max'],
     'email'      => ['aide', 'obligatoire', 'defaut', 'exemple', 'unique'],
     'telephone'  => ['aide', 'obligatoire', 'defaut', 'exemple', 'unique'],
-    'nombre'     => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max', 'unique'],
+    'nombre'     => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max', 'entier', 'unique'],
     'date'       => ['aide', 'obligatoire', 'defaut', 'min', 'max'],
     'choix'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
@@ -2768,7 +2840,7 @@ function ins_modele(array $form): array
         $champs[] = [
             'nom' => $c['nom'], 'type' => $c['type'], 'libelle' => $c['libelle'], 'aide' => $c['aide'],
             'obligatoire' => (bool)$c['obligatoire'], 'options' => array_values($c['options']), 'defaut' => $c['defaut'],
-            'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'],
+            'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'], 'entier' => (bool)$c['entier'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
             'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'],
             'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
@@ -2970,6 +3042,9 @@ function ins_modele_vers_ini(string $id, array $m): string
         }
         if (in_array('unique', $props, true) && !empty($c['unique'])) {
             $l[] = 'unique = oui';
+        }
+        if (in_array('entier', $props, true) && !empty($c['entier'])) {
+            $l[] = 'entier = oui';
         }
         if (in_array('multiple', $props, true) && !empty($c['multiple'])) {
             $l[] = 'multiple = oui';
