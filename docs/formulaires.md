@@ -4,7 +4,7 @@
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
-[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
+[Champs conditionnels](#champs-conditionnels) · [Grille](#grille) · [Total calculé](#total-calculé) · [Liens](#liens) · [Courriel de confirmation](#courriel-de-confirmation) · [Exemples](#exemples) · [Diffusion et lien de partage](#diffusion-et-lien-de-partage) ·
 [Accès restreint](#accès-restreint) · [Formulaire de commande](#formulaire-de-commande) ·
 [Logo](#logo) · [Formulaire multilingue](#formulaire-multilingue) · [Écrire en anglais](#écrire-en-anglais) ·
 [Modifier un formulaire déjà utilisé](#modifier-un-formulaire-déjà-utilisé) · [Erreurs](#erreurs)
@@ -51,6 +51,8 @@ Réglages de la section `[formulaire]` :
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque réponse (séparées par des virgules) | — |
+| `confirmation` | `oui` : courriel de confirmation au répondant, à l'adresse du premier champ `email` ; ou le nom du champ `email` à utiliser (voir [Courriel de confirmation](#courriel-de-confirmation)) | pas de courriel |
+| `confirmation_texte` | texte en tête du courriel de confirmation (traduisible) | le message `merci` |
 | `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le [lien de partage](#diffusion-et-lien-de-partage) | oui |
 | `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
 | `modifiable` | accès restreint : `oui` = chaque personne peut revenir modifier sa réponse ; `non` = une réponse définitive | oui |
@@ -69,6 +71,9 @@ Réglages de la section `[formulaire]` :
 | `telephone`  | numéro de téléphone (format vérifié) | le numéro |
 | `nombre`     | nombre (bornes `min` / `max`) | le nombre |
 | `date`       | calendrier (bornes `min` / `max` au format `AAAA-MM-JJ`) | `AAAA-MM-JJ` |
+| `montant`    | somme d'argent : le symbole de `devise` (config.php) s'affiche après la zone ; accepte `12`, `12,5`, `12.50`, `1 250,00 €` ; jamais négatif sauf `min` négatif | le montant à deux décimales (`12,50`) |
+| `heure`      | sélecteur d'heure ; accepte aussi `9h`, `9h05`, `14:30` ; `min` / `max` = plage horaire (`06:00`, `23:30`) | l'heure `HH:MM` |
+| `total`      | montant **calculé** à partir de champs nombre / montant (`calcul = "adultes * 15 + enfants * 8"`), affiché en direct, voir [Total calculé](#total-calculé) | le total (`54,00`) |
 | `choix`      | boutons radio : une seule réponse parmi `options` | la réponse choisie |
 | `liste`      | liste déroulante : une réponse parmi `options` | la réponse choisie |
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
@@ -90,12 +95,35 @@ Réglages de la section `[formulaire]` :
 | `options`     | réponses possibles pour `choix`, `liste`, `cases`, `echelle`, séparées par `\|` : `"Oui \| Non \| Peut-être"` |
 | `lignes`, `colonnes` | pour `grille` : questions (lignes) et réponses possibles (colonnes), séparées par `\|` |
 | `multiple`    | pour `grille` : `oui` = cases à cocher, plusieurs réponses par ligne |
+| `saisie`      | pour `grille` : `nombre`, `montant` ou `texte` = une zone à remplir par case au lieu d'un choix (voir [Grille de saisie](#grille-de-saisie)) |
 | `gauche`, `droite` | pour `echelle` : textes affichés aux deux bouts (ex. `"Pas du tout"` / `"Tout à fait"`) |
 | `defaut`      | valeur pré-remplie (pour `cases`, plusieurs valeurs séparées par `\|`) |
 | `exemple`     | texte grisé d'exemple dans la zone de saisie |
-| `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` |
+| `min`, `max`  | bornes d'un `nombre` ou d'une `date` ; longueur mini/maxi d'un `texte` ou `texte_long` (voir [Limites](#limites-min-et-max)) |
+| `entier`      | pour `nombre` : `oui` = nombre entier seulement (pas de virgule) |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+
+### Limites (min et max)
+
+```ini
+[groupe]
+type    = nombre
+libelle = "Nombre de personnes (vous compris)"
+min     = 1
+max     = 30
+entier  = oui
+```
+
+- **nombre** : `min` et `max` acceptent la virgule ou le point (`2,5`), et les nombres négatifs ; `entier = oui` refuse les
+  décimales. Les limites s'affichent sous la question (« Nombre entier. Entre 1 et 30. ») et sont vérifiées à l'envoi
+  (« Entre 1 et 30. ») ; sur téléphone, le clavier numérique s'ouvre ;
+- **montant** : comme un nombre, avec deux décimales au plus ; sans `min`, un montant négatif est refusé ;
+- **heure** : `min = 06:00`, `max = 23:30` ;
+- **date** : `min = 2026-12-01`, `max = 2026-12-31` (format `AAAA-MM-JJ`) ; le calendrier du navigateur ne propose que ces dates ;
+- **texte**, **texte_long** : nombre de caractères minimum / maximum ;
+- une seule des deux limites suffit ; une limite mal écrite, un `min` plus grand que `max` ou une valeur `defaut` hors des
+  limites rendent le formulaire invalide, avec un message qui le dit.
 | `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels
@@ -112,11 +140,18 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 | `si = "covoiturage = oui"` | pour un champ de type `case` (cochée = `oui`, non cochée = `non`) |
 | `si = "groupe > 4"` | nombre : `<`, `<=`, `>`, `>=`, et aussi `=` / `!=` (virgule ou point : `2,5`) |
 | `si = "arrivee < 2026-12-12"` | date, au format `AAAA-MM-JJ` |
+| `si = "depart < 07:00"` · `si = "transport > 100"` | heure `HH:MM` · montant |
 | `si = "satisfaction <= 2"` | échelle de notes, si toutes ses notes sont des nombres |
 | `si = "hebergement = Oui & groupe > 4"` | les deux à la fois : choix **et** comparaison |
+| `si = "hebergement = Oui \|\| groupe > 4"` | `\|\|` = **au moins une** des conditions (OU) — à activer dans `config.php` |
 
 Une comparaison (`<`, `<=`, `>`, `>=`) ne porte que sur un **seul** nombre ou une seule date. **Tant que le nombre (ou la date)
 n'est pas saisi, la condition est fausse** : le champ reste masqué, même avec `!=`. À l'écran, l'affichage change pendant la frappe.
+
+Le **OU** (`||`) est désactivé par défaut : mettez `'conditions_ou' => true` dans `prive/config.php` pour l'autoriser.
+Une même condition est soit toute en `&` (toutes vraies), soit toute en `||` (au moins une vraie) : le mélange est refusé.
+Une condition sur un champ masqué est fausse. Dans l'éditeur, un choix « Toutes les conditions (ET) / Au moins une (OU) »
+apparaît dès qu'il y a deux conditions (si le OU est activé).
 
 Un champ masqué n'est jamais obligatoire et n'est pas enregistré (colonne vide), même si une valeur
 est envoyée de force. Sans JavaScript, tous les champs s'affichent mais les mêmes règles s'appliquent à l'enregistrement.
@@ -146,6 +181,102 @@ si          = "vehicule = Oui"
 - multilingue : `lignes_en`, `colonnes_en`, avec autant d'éléments que `lignes` et `colonnes` ;
 - sur téléphone, les lignes s'affichent l'une sous l'autre avec leurs réponses ;
 - une grille peut être conditionnelle (`si = …`), mais un autre champ ne peut pas encore dépendre de la réponse à une grille.
+
+### Grille de saisie
+
+Avec `saisie = nombre` (ou `montant`, `texte`), chaque case est une **zone à remplir** au lieu d'un bouton :
+
+```ini
+[repas]
+type     = grille
+saisie   = nombre
+libelle  = "Type de repas"
+lignes   = "Samedi midi végétarien | Samedi midi classique | Dimanche midi végétarien | Dimanche soir classique"
+colonnes = "Nombre"
+entier   = oui
+min      = 0
+```
+
+- **une colonne** (ou aucune) : une zone par ligne, colonne du fichier `<champ>_<ligne>` (`repas_samedi_midi_vegetarien`…) ;
+- **plusieurs colonnes** (`colonnes = "Végétarien | Classique"`, lignes = jours) : une zone par case, colonne
+  `<champ>_<ligne>_<colonne>` (`repas_groupe_samedi_midi_vegetarien`) ;
+- `min`, `max`, `entier` s'appliquent à **chaque case** et s'affichent sous la question ; une case invalide est encadrée
+  en rouge et le message la nomme (« Samedi soir / Classique : Nombre entier attendu ») ;
+- `obligatoire = oui` : **au moins une case** remplie ; les cases vides restent vides dans le fichier ;
+- `saisie = montant` affiche la devise et enregistre `12,50` ; `saisie = texte` : texte court ;
+- notification et confirmation : « Samedi midi : Végétarien 2, Classique 3 » ;
+- sur téléphone, chaque ligne s'affiche avec ses zones et le nom de leur colonne.
+
+## Total calculé
+
+Un champ `total` calcule un prix à partir des quantités saisies :
+
+```ini
+[adultes]
+type    = nombre
+libelle = "Nombre de places adultes"
+entier  = oui
+min     = 1
+
+[enfants]
+type    = nombre
+libelle = "Nombre de places enfants"
+entier  = oui
+min     = 0
+
+[total]
+type    = total
+libelle = "Prix total"
+calcul  = "adultes * 15 + enfants * 8"
+```
+
+- `calcul` : termes `champ * prix unitaire` (ou `prix * champ`, ou `champ` seul) séparés par `+` ou `-` ; un nombre seul
+  ajoute des frais fixes (`+ 2,50`) ; virgule ou point ;
+- les champs cités sont des `nombre`, `montant` ou `total` **décrits avant** ; un champ vide, illisible ou masqué compte pour 0 ;
+- le total s'affiche en grand, avec la devise, et se met à jour pendant la saisie ; il est **recalculé par le serveur** à
+  l'envoi (une valeur modifiée dans le navigateur est ignorée) puis enregistré dans le fichier de réponses ;
+- il figure dans la notification et le courriel de confirmation (« Prix total : 54,00 € ») ;
+- il peut servir de condition : `si = "total >= 100"` ;
+- pour un vrai bon de commande (catalogue de produits, préparation, prix définitif), voir le type `commande`.
+
+## Liens
+
+Les textes affichés peuvent contenir des liens, dans `intro`, `merci`, `aide`, le `libelle` d'un `info` et celui d'une `case` :
+
+```ini
+intro = "Programme et plan d'accès : [site de la rencontre](https://exemple.org/rencontre)."
+
+[reglement]
+type        = case
+libelle     = "J'ai lu le [règlement](https://exemple.org/reglement) et je l'accepte"
+obligatoire = oui
+```
+
+- `[texte du lien](https://…)` affiche « texte du lien » cliquable ; une adresse écrite seule (`https://exemple.org`) devient
+  aussi un lien ; `mailto:contact@exemple.org` est accepté ;
+- seules les adresses `https://`, `http://` et `mailto:` sont reconnues (pas de `javascript:`…) ; tout autre balisage
+  est affiché tel quel. Les liens s'ouvrent dans un nouvel onglet, pour ne pas perdre la saisie en cours ;
+- dans les courriels (notification, confirmation), `[texte](adresse)` devient « texte (adresse) ».
+
+## Courriel de confirmation
+
+Le répondant peut recevoir un courriel récapitulant sa réponse :
+
+```ini
+[formulaire]
+confirmation       = oui      ; ou le nom du champ email à utiliser : confirmation = email_contact
+confirmation_texte = "Merci, votre inscription est enregistrée. Programme : https://exemple.org/programme"
+```
+
+- il faut un champ de type `email` (le premier, avec `oui`) ; le courriel part à l'adresse saisie, après l'enregistrement ;
+- contenu : `confirmation_texte` (sinon le message `merci`), le numéro de réponse (si `afficher_numero`), puis toutes les
+  réponses, **dans la langue du répondant** ; après une modification (accès restreint `modifiable`), le sujet l'indique ;
+- la page de remerciement signale l'envoi ; « Répondre » au courriel écrit à la première adresse de `notifier` ;
+- garde-fous contre les robots qui saisiraient l'adresse d'un tiers : au plus un courriel par adresse et par formulaire
+  toutes les 10 minutes, et au plus `confirmation_max_heure` (30) courriels par heure pour tout le site ;
+- `'confirmation' => false` dans `config.php` coupe ces courriels pour tout le site (une alerte le rappelle dans `admin.php`) ;
+- l'envoi utilise `mail()` de l'hébergeur, comme les notifications : réglez `expediteur` sur une adresse de votre domaine,
+  sinon les messages risquent de finir dans les indésirables (voir [Réglages](administration.md#réglages)).
 
 ## Exemples
 
@@ -210,7 +341,9 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
-| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle) |
+| `spectacle.ini` | réservation de places de spectacle : date (plage de dates), places adultes / enfants, prix total calculé, info conditionnelle sur le total, confirmation |
+| `frais.ini` | remboursement de frais : heures de départ et de retour (plage horaire), montants (avec maximum), infos conditionnelles (`depart < 07:00`, `transport > 100`) |
+| `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle), liens, courriel de confirmation |
 
 ## Diffusion et lien de partage
 
@@ -389,7 +522,8 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `places` | `limit` | | `si` | `if` |
 | `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
-| `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
+| `confirmation` | `confirm` | | | |
+| `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure`, `total` | `phone`, `number`, `amount`, `time`, `sum` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |

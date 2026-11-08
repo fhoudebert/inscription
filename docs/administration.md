@@ -328,6 +328,9 @@ Fichier `prive/config.php` :
 | `longueur_max` | longueur maximale d'une réponse |
 | `expediteur` | adresse d'expédition des notifications (souvent obligatoirement une adresse de votre domaine) |
 | `devise` | symbole monétaire des formulaires de commande : `€` (défaut), `CHF`, `$`… |
+| `confirmation` | `true` (défaut) : les formulaires peuvent envoyer un courriel de confirmation au répondant ; `false` : jamais |
+| `confirmation_max_heure` | nombre maximal de courriels de confirmation par heure pour tout le site (défaut 30 ; 0 = sans limite) |
+| `conditions_ou` | `false` (défaut) ; `true` autorise le OU (`\|\|`) dans les conditions `si` |
 | `logo`, `logo_texte` | logo par défaut à gauche du titre des pages publiques (image de `prive/images/`) et son texte de remplacement ; vide = aucun (voir [Images](#images)) |
 | `debug` | `true` : affiche le détail des erreurs (à remettre à `false` ensuite) |
 
@@ -377,6 +380,8 @@ ou `langues = "fr | de"`. Un texte d'interface manquant est affiché en françai
 | « PHP ne peut pas écrire dans … formulaires » | donner les droits d'écriture au dossier `prive/formulaires/` (voir [Installation](#installation), étape 2) |
 | accents incorrects dans Excel | ouvrir via *Données* → *À partir d'un fichier texte/CSV*, encodage UTF-8 |
 | pas de courriel de notification | `mail()` désactivé chez l'hébergeur, ou `expediteur` hors de votre domaine |
+| pas de courriel de confirmation | mêmes causes ; ou `'confirmation' => false` ; ou limite atteinte (même adresse il y a moins de 10 minutes, `confirmation_max_heure`) : voir le journal d'erreurs PHP |
+| « le OU (\|\|) … est désactivé » | mettre `'conditions_ou' => true` dans `config.php`, ou écrire la condition avec `&` |
 | une modification par FTP ne s'affiche pas | attendre quelques secondes (cache PHP de l'hébergeur) puis recharger |
 | un lien personnel répond « Page introuvable » | lien mal copié (identifiant ou jeton tronqué) ; en mode `lien`, lien renouvelé depuis (« Nouveau lien ») |
 | « Cet accès n'est plus valable » | accès révoqué : **Réactiver** dans `admin.php` |

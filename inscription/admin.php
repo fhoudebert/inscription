@@ -321,6 +321,7 @@ if ($action === 'editeur' || (isset($_POST['action']) && in_array($_POST['action
         'existants' => array_values(array_map(function ($f) { return basename($f, '.ini'); }, glob($dirForm . '/*.ini') ?: [])),
         'catalogues' => ins_catalogues(),
         'images' => ins_images(), 'logo_site' => (string)$cfg['logo'],
+        'confirmation_site' => (bool)$cfg['confirmation'], 'conditions_ou' => (bool)$cfg['conditions_ou'],
         'textes' => $textes,
     ];
     ins_entete($nouveau ? t('edi_titre_nouveau') : t('edi_titre', ['id' => $id]));
@@ -788,6 +789,9 @@ foreach ($formulaires as $id => $form) {
     if (count($parFichier[$form['fichier']]) > 1) {
         echo '<div class="alerte">' . e(t('adm_fichier_partage', ['fichier' => $form['fichier'],
             'autres' => implode(', ', array_diff($parFichier[$form['fichier']], [$id]))])) . '</div>';
+    }
+    if ($form['confirmation'] !== '' && !$cfg['confirmation']) {
+        echo '<div class="alerte">' . e(t('adm_conf_desactivee')) . '</div>';
     }
     if ($form['logo'] !== '' && $form['logo'] !== 'non' && !is_file(INS_PRIVE . '/images/' . $form['logo'])) {
         echo '<div class="alerte">' . e(t('adm_img_absente', ['nom' => $form['logo']])) . '</div>';

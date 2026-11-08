@@ -61,7 +61,7 @@
   }
   var DECORATIFS = ['titre', 'info'];
   var A_OPTIONS = ['choix', 'liste', 'cases', 'echelle'];
-  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'date'];
+  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'montant', 'total', 'date', 'heure'];
   var COMPARAISONS = ['<', '<=', '>', '>='];
 
   /* ---------- État ---------- */
@@ -352,7 +352,7 @@
     opts = opts || {};
     var id = 'p-' + cle + '-' + Math.random().toString(36).slice(2, 7);
     var z = el(opts.long ? 'textarea' : 'input', { id: id, type: opts.long ? null : (opts.type || 'text'), 'data-cle': cle,
-      placeholder: opts.placeholder || null, min: opts.min, max: opts.max, rows: opts.long ? (opts.rows || 3) : null });
+      placeholder: opts.placeholder || null, inputmode: opts.inputmode || null, min: opts.min, max: opts.max, rows: opts.long ? (opts.rows || 3) : null });
     var v = obj[cle];
     z.value = Array.isArray(v) ? v.join('\n') : (v === undefined || v === null ? '' : String(v));
     z.addEventListener('input', function () {
@@ -426,6 +426,10 @@
       props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
       props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
       props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
+      if (g.confirmation) {
+        props.appendChild(traduisible(g, 'confirmation_texte', { libelle: T('edi_confirmation_texte'), long: true, rows: 3,
+          placeholder: T('edi_confirmation_texte_defaut'), aide: T('edi_confirmation_texte_aide') }));
+      }
       if (cmd) {
         props.appendChild(traduisible(g, 'message', { libelle: T('edi_message_commande'), long: true, rows: 6, placeholder: T('edi_par_defaut'),
           aide: T('edi_message_commande_aide', { champs: S.modele.champs.filter(function (c) { return DECORATIFS.indexOf(c.type) < 0 && c.type !== 'commande'; })
@@ -464,6 +468,15 @@
     }
     props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
+    // Courriel de confirmation au répondant : vers un champ e-mail du formulaire
+    var mails = S.modele.champs.filter(function (c) { return c.type === 'email'; });
+    var valsConf = [['', T('edi_confirmation_non')]].concat(mails.map(function (c, i) {
+      return [i === 0 && g.confirmation === 'oui' ? 'oui' : c.nom, T('edi_confirmation_vers', { champ: c.libelle || c.nom })];
+    }));
+    if (g.confirmation && g.confirmation !== 'oui' && !mails.some(function (c) { return c.nom === g.confirmation; })) valsConf.push([g.confirmation, g.confirmation + ' ⚠']);
+    props.appendChild(choixListe(g, 'confirmation', valsConf, T('edi_confirmation'), dessinerProps));
+    if (!mails.length) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_sans_mail') }));
+    else if (g.confirmation && !D.confirmation_site) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_site') }));
 
     titreGroupe('logo', T('edi_logo_groupe'));
     reglageLogo(g);
@@ -565,11 +578,25 @@
         dessinerListe(); dessinerProps();
       }));
     }
+    if (p.indexOf('calcul') >= 0) {
+      // Champs utilisables : nombres, montants et totaux placés avant ce champ
+      var avant = [];
+      for (var i = 0; i < S.modele.champs.length && S.modele.champs[i] !== c; i++) {
+        if (['nombre', 'montant', 'total'].indexOf(S.modele.champs[i].type) >= 0) avant.push(S.modele.champs[i].nom);
+      }
+      props.appendChild(texte(c, 'calcul', { libelle: T('edi_calcul'), placeholder: avant.length > 1 ? avant[0] + ' * 15 + ' + avant[1] + ' * 8' : 'adultes * 15 + enfants * 8',
+        aide: T('edi_calcul_aide', { champs: avant.length ? avant.join(', ') : '—' }) }));
+    }
+    if (p.indexOf('saisie') >= 0) {
+      props.appendChild(choixListe(c, 'saisie', [['', T('edi_saisie_choix')], ['nombre', T('edi_saisie_nombre')],
+        ['montant', T('edi_saisie_montant')], ['texte', T('edi_saisie_texte')]], T('edi_saisie'), dessinerProps));
+    }
     if (p.indexOf('lignes') >= 0) {
       props.appendChild(traduisible(c, 'lignes', { libelle: T('edi_lignes'), long: true, rows: 4, liste: true, aide: T('edi_lignes_aide') }));
     }
     if (p.indexOf('options') >= 0 && c.type === 'grille') {
-      props.appendChild(traduisible(c, 'options', { libelle: T('edi_colonnes'), long: true, rows: 3, liste: true, aide: T('edi_options_aide') }));
+      props.appendChild(traduisible(c, 'options', { libelle: T(c.saisie ? 'edi_colonnes_saisie' : 'edi_colonnes'), long: true, rows: 3, liste: true,
+        aide: T(c.saisie ? 'edi_colonnes_saisie_aide' : 'edi_options_aide') }));
     } else if (p.indexOf('options') >= 0) {
       props.appendChild(traduisible(c, 'options', { libelle: T('edi_options'), long: true, rows: 5, liste: true,
         aide: c.type === 'echelle' ? T('edi_options_echelle') : T('edi_options_aide'), apres: optionsModifiees(c) }));
@@ -591,12 +618,18 @@
 
     if (p.indexOf('obligatoire') >= 0) props.appendChild(caseCocher(c, 'obligatoire', c.type === 'case' ? T('edi_obligatoire_case') : T('edi_obligatoire'), dessinerListe));
     if (p.indexOf('unique') >= 0) props.appendChild(caseCocher(c, 'unique', T('edi_unique')));
-    if (p.indexOf('multiple') >= 0) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
-    if (p.indexOf('min') >= 0) {
-      var tp = c.type === 'date' ? 'date' : 'number';
-      var lib = c.type === 'nombre' ? ['edi_val_min', 'edi_val_max'] : c.type === 'date' ? ['edi_date_min', 'edi_date_max'] : ['edi_long_min', 'edi_long_max'];
-      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: tp }), texte(c, 'max', { libelle: T(lib[1]), type: tp })));
+    if (p.indexOf('multiple') >= 0 && !c.saisie) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
+    var numGrille = c.type !== 'grille' || c.saisie === 'nombre' || c.saisie === 'montant';
+    if (p.indexOf('min') >= 0 && numGrille) {
+      var tc = c.type === 'grille' ? c.saisie : c.type; // grille de saisie : limites de chaque case
+      var tp = { date: 'date', heure: 'time', nombre: 'text', montant: 'text' }[tc] || 'number';
+      var lib = { nombre: ['edi_val_min', 'edi_val_max'], montant: ['edi_montant_min', 'edi_montant_max'], date: ['edi_date_min', 'edi_date_max'],
+        heure: ['edi_heure_min', 'edi_heure_max'] }[tc] || ['edi_long_min', 'edi_long_max'];
+      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: tp, inputmode: tp === 'text' ? 'decimal' : null }),
+        texte(c, 'max', { libelle: T(lib[1]), type: tp, inputmode: tp === 'text' ? 'decimal' : null })));
+      if (['nombre', 'montant', 'heure'].indexOf(tc) >= 0) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
     }
+    if (p.indexOf('entier') >= 0 && (c.type !== 'grille' || c.saisie === 'nombre')) props.appendChild(caseCocher(c, 'entier', T('edi_entier')));
     if (p.indexOf('defaut') >= 0) {
       if (c.type === 'case') {
         var obj = { v: c.defaut === 'oui' || c.defaut === '1' };
@@ -639,6 +672,15 @@
       if (CONDITIONNABLES.indexOf(S.modele.champs[i].type) >= 0) cibles.push(S.modele.champs[i]);
     }
     if (!(c.si || []).length) bloc.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_toujours') }));
+    // Plusieurs conditions : toutes (ET), ou au moins une (OU) si config.php le permet
+    if ((c.si || []).length > 1 && (D.conditions_ou || c.si_ou)) {
+      var sMode = el('select', { 'aria-label': T('edi_cond_mode') },
+        el('option', { value: '', texte: T('edi_cond_toutes') }), el('option', { value: 'ou', texte: T('edi_cond_une') }));
+      sMode.value = c.si_ou ? 'ou' : '';
+      sMode.addEventListener('change', function () { c.si_ou = sMode.value === 'ou'; marquerModifie(); dessinerProps(); planifierApercu(0); });
+      bloc.appendChild(el('div', { classe: 'edi-prop' }, sMode));
+      if (c.si_ou && !D.conditions_ou) bloc.appendChild(el('div', { classe: 'msg', texte: T('edi_cond_ou_desactive') }));
+    }
     (c.si || []).forEach(function (k, n) {
       var cible = cibles.filter(function (x) { return x.nom === k.champ; })[0];
       var sCible = el('select', { 'aria-label': T('edi_cond_champ') },
@@ -649,7 +691,7 @@
       sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; k.op = '='; k.egal = true; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
       // Opérateurs : « est parmi / n'est pas parmi » pour les choix ; =, ≠, <, ≤, >, ≥ pour les nombres et les dates
       var typeC = cible ? cible.type : '';
-      var numerique = typeC === 'nombre' || typeC === 'date';
+      var numerique = ['nombre', 'montant', 'total', 'date', 'heure'].indexOf(typeC) >= 0;
       var opsComp = [['<', T('edi_cond_inf')], ['<=', T('edi_cond_inf_egal')], ['>', T('edi_cond_sup')], ['>=', T('edi_cond_sup_egal')]];
       var ops = numerique ? [['=', T('edi_cond_egal')], ['!=', T('edi_cond_different')]].concat(opsComp)
         : [['est', T('edi_cond_est')], ['nest', T('edi_cond_nest_pas')]].concat(typeC === 'echelle' ? opsComp : []);
@@ -665,8 +707,8 @@
       });
       var vals = el('div', { classe: 'edi-cond-valeurs' });
       if (cible && (numerique || comparaison)) {
-        var zVal = el('input', { type: typeC === 'date' ? 'date' : 'text', inputmode: typeC === 'date' ? null : 'decimal',
-          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' ? '' : '4' });
+        var zVal = el('input', { type: { date: 'date', heure: 'time' }[typeC] || 'text', inputmode: typeC === 'date' || typeC === 'heure' ? null : 'decimal',
+          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' || typeC === 'heure' ? '' : '4' });
         zVal.style.width = '10rem';
         zVal.addEventListener('input', function () { var v = zVal.value.trim(); k.valeurs = v ? [v] : []; marquerModifie(); planifierApercu(); });
         vals.appendChild(zVal);
@@ -685,7 +727,7 @@
       });
       if (!cible) vals.appendChild(el('div', { classe: 'msg', texte: T('edi_cond_ordre', { cible: k.champ }) }));
       bloc.appendChild(el('div', { classe: 'edi-cond' }, el('div', { classe: 'edi-cond-ligne' },
-        n > 0 ? el('span', { classe: 'edi-et', texte: T('edi_et') }) : null, sCible, sOp,
+        n > 0 ? el('span', { classe: 'edi-et', texte: T(c.si_ou ? 'edi_ou' : 'edi_et') }) : null, sCible, sOp,
         bouton('✕', T('edi_cond_retirer'), function () { c.si.splice(n, 1); marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); })), vals));
     });
     if (cibles.length) {

@@ -15,6 +15,7 @@ sans base de données ni programmation :
   l'admin donne les quantités à préparer, permet de fixer le prix définitif de chaque commande et prépare le message
   à copier dans un SMS ou un e-mail ;
 - un **logo** peut s'afficher à gauche du titre (logo du site, ou propre à chaque formulaire) ;
+- les textes peuvent contenir des **liens**, et le répondant peut recevoir un **courriel de confirmation** ;
 - l'interface est en **français et en anglais**, et un formulaire peut être **multilingue** (langue du navigateur, changement par un lien).
 
 Prérequis : **PHP 7.4 ou plus récent**. Aucune extension particulière, aucune session PHP, aucune base MySQL.
@@ -83,7 +84,9 @@ Déposé sous `prive/formulaires/reunion.ini` (par FTP, par téléversement ou c
 Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),
 `colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe),
 `panier.ini` (commande du panier de la semaine d'un maraîcher, sur le catalogue fictif `legumes`),
-`rencontre.ini` (grilles de choix : présence, repas, covoiturage sur trois jours).
+`rencontre.ini` (grilles de choix : présence, repas, covoiturage sur trois jours),
+`frais.ini` (montants et heures : remboursement de frais de déplacement),
+`spectacle.ini` (réservation de places avec prix total calculé).
 Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
 
 ## Données personnelles

@@ -204,8 +204,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($numero !== null) {
             ins_notifier($formBase, $numero, $valeurs, $acces); // libellés dans la langue de base
-            $sig = ins_signer("merci|$fid|$numero");
-            header('Location: ' . $url . '&merci=' . rawurlencode($numero) . '&s=' . $sig, true, 303);
+            $conf = ins_confirmer($form, $numero, $valeurs, $reponseExistante !== null) ? '1' : ''; // au répondant, dans sa langue
+            $sig = ins_signer("merci|$fid|$numero|$conf");
+            header('Location: ' . $url . '&merci=' . rawurlencode($numero) . ($conf ? '&conf=1' : '') . '&s=' . $sig, true, 303);
             exit;
         }
     }
@@ -222,8 +223,13 @@ echo ins_tete($form['titre'], $form);
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {
     $numero = is_string($_GET['merci']) ? $_GET['merci'] : '';
     $sig = isset($_GET['s']) && is_string($_GET['s']) ? $_GET['s'] : '';
-    echo '<div class="ok"><p>' . nl2br(e($form['merci'] !== '' ? $form['merci'] : t('merci_defaut'))) . '</p>';
-    if ($form['afficher_numero'] && $numero !== '' && $sig !== '' && hash_equals(ins_signer("merci|$fid|$numero"), $sig)) {
+    echo '<div class="ok"><p>' . ins_texte($form['merci'] !== '' ? $form['merci'] : t('merci_defaut')) . '</p>';
+    $conf = isset($_GET['conf']) ? '1' : '';
+    $sigOk = $numero !== '' && $sig !== '' && hash_equals(ins_signer("merci|$fid|$numero|$conf"), $sig);
+    if ($sigOk && $conf) {
+        echo '<p>' . e(t('conf_envoyee')) . '</p>';
+    }
+    if ($form['afficher_numero'] && $sigOk) {
         echo '<p>' . e(t('numero_reponse')) . ' <code>' . e($numero) . '</code><br>'
             . '<span class="petit">' . e(t('numero_conserver')) . '</span></p>';
     }
@@ -258,7 +264,7 @@ if ($acces !== null) {
     }
 }
 if ($form['intro'] !== '') {
-    echo '<div class="info">' . nl2br(e($form['intro'])) . '</div>';
+    echo '<div class="info">' . ins_texte($form['intro']) . '</div>';
 }
 if ($alerte !== '') {
     echo '<div class="alerte" role="alert">' . e($alerte) . '</div>';
