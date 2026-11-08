@@ -27,7 +27,7 @@ const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGET
 const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
 const INS_TRAD_CHAMP = ['libelle', 'aide', 'exemple', 'gauche', 'droite', 'options', 'lignes'];
 const INS_TYPES = [
-    'texte', 'texte_long', 'email', 'telephone', 'nombre', 'date',
+    'texte', 'texte_long', 'email', 'telephone', 'nombre', 'montant', 'date', 'heure',
     'choix', 'liste', 'cases', 'case', 'echelle', 'grille', 'commande', 'titre', 'info',
 ];
 // Catalogues de produits (prive/catalogues/<nom>.csv) pour les champs « commande »
@@ -41,6 +41,8 @@ const INS_ALIAS_TYPES = [
     'text' => 'texte', 'textarea' => 'texte_long', 'zone' => 'texte_long', 'paragraphe' => 'texte_long',
     'longtext' => 'texte_long', 'long_text' => 'texte_long',
     'mail' => 'email', 'courriel' => 'email', 'tel' => 'telephone', 'téléphone' => 'telephone', 'phone' => 'telephone',
+    'amount' => 'montant', 'money' => 'montant', 'prix' => 'montant', 'somme' => 'montant',
+    'time' => 'heure', 'hour' => 'heure', 'horaire' => 'heure',
     'number' => 'nombre', 'radio' => 'choix', 'choice' => 'choix', 'select' => 'liste', 'list' => 'liste',
     'dropdown' => 'liste', 'checkbox' => 'cases', 'checkboxes' => 'cases',
     'consentement' => 'case', 'case_unique' => 'case', 'consent' => 'case',
@@ -652,7 +654,7 @@ function ins_verifier_bornes(array $c, string $f): void
     if ($c['min'] === null && $c['max'] === null) {
         return;
     }
-    $genre = ['nombre' => 'nombre', 'date' => 'date', 'texte' => 'longueur', 'texte_long' => 'longueur'][$c['type']] ?? '';
+    $genre = ['nombre' => 'nombre', 'montant' => 'nombre', 'date' => 'date', 'heure' => 'heure', 'texte' => 'longueur', 'texte_long' => 'longueur'][$c['type']] ?? '';
     if ($genre === '') {
         return; // min / max sans effet sur ce type
     }
@@ -686,10 +688,17 @@ function ins_verifier_bornes(array $c, string $f): void
 /** Bornes d'un nombre en clair, pour l'aide sous le libellé : « Entre 1 et 30 », « Au moins 1 », « Nombre entier »… */
 function ins_aide_bornes(array $c): string
 {
-    if ($c['type'] !== 'nombre') {
+    if (!in_array($c['type'], ['nombre', 'montant', 'heure'], true)) {
         return '';
     }
-    $f = function ($v) { return str_replace('.', t('decimale'), (string)$v); };
+    $devise = (string)ins_config()['devise'];
+    $f = function ($v) use ($c, $devise) {
+        if ($c['type'] === 'heure') {
+            return ins_heure_lisible((string)$v);
+        }
+        $v = str_replace('.', t('decimale'), (string)$v);
+        return $c['type'] === 'montant' ? $v . ' ' . $devise : $v;
+    };
     if ($c['min'] !== null && $c['max'] !== null) {
         $txt = t('borne_entre', ['min' => $f($c['min']), 'max' => $f($c['max'])]);
     } elseif ($c['min'] !== null) {
@@ -807,7 +816,7 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         $op = $m[2];
         $comparaison = !in_array($op, ['=', '!='], true);
         // Comparaison de nombres ou de dates : champ nombre, date, ou échelle dont les notes sont des nombres
-        $num = in_array($c['type'], ['nombre', 'date'], true) || ($c['type'] === 'echelle' && $comparaison);
+        $num = in_array($c['type'], ['nombre', 'montant', 'date', 'heure'], true) || ($c['type'] === 'echelle' && $comparaison);
         if ($comparaison && !$num) {
             throw new RuntimeException(t('err_condition_comparaison', ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'op' => $op]));
         }
@@ -819,12 +828,12 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
                 throw new RuntimeException(t('err_condition_echelle', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
             }
             foreach ($valeurs as $v) {
-                if (ins_valeur_comparable($c['type'] === 'date' ? 'date' : 'nombre', $v) === null) {
-                    throw new RuntimeException(t($c['type'] === 'date' ? 'err_condition_date' : 'err_condition_valeur',
+                if (ins_valeur_comparable(ins_genre_comparable($c['type']), $v) === null) {
+                    throw new RuntimeException(t(['date' => 'err_condition_date', 'heure' => 'err_condition_heure'][$c['type']] ?? 'err_condition_valeur',
                         ['f' => $f, 'nom' => $nom, 'cible' => $cible, 'valeur' => $v]));
                 }
             }
-            $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op !== '!=', 'valeurs' => $valeurs, 'num' => $c['type'] === 'date' ? 'date' : 'nombre'];
+            $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op !== '!=', 'valeurs' => $valeurs, 'num' => ins_genre_comparable($c['type'])];
             continue;
         }
         if ($c['type'] === 'case') {
@@ -842,10 +851,45 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
     return $res;
 }
 
-/** Valeur comparable d'une saisie : nombre (virgule ou point) ou date AAAA-MM-JJ ; null si illisible ou vide. */
+/** Genre de comparaison d'un type de champ : nombre, date, heure ; '' si non comparable. */
+function ins_genre_comparable(string $type): string
+{
+    return ['nombre' => 'nombre', 'montant' => 'nombre', 'echelle' => 'nombre', 'date' => 'date', 'heure' => 'heure'][$type] ?? '';
+}
+
+/** Heure saisie (9:05, 09h05, 9h, 14 h 30) → 09:05 ; null si illisible. */
+function ins_heure(string $v): ?string
+{
+    if (!preg_match('/^([01]?\d|2[0-3])\s*(?:[:hH]\s*([0-5]\d)?)?$/', trim($v), $m) || (strpos($v, ':') === false && !preg_match('/h/i', $v) && strlen(trim($v)) > 2)) {
+        return null;
+    }
+    return sprintf('%02d:%02d', (int)$m[1], (int)($m[2] ?? 0));
+}
+
+/** Heure à l'affichage : 09:05 → « 9 h 05 » en français, « 09:05 » en anglais. */
+function ins_heure_lisible(string $v): string
+{
+    $h = ins_heure($v);
+    if ($h === null) {
+        return $v;
+    }
+    return t('heure_format', ['h' => (int)substr($h, 0, 2), 'hh' => substr($h, 0, 2), 'mm' => substr($h, 3, 2)]);
+}
+
+/** Montant saisi (12 ; 12,5 ; 1 250,00 € ; 12.50) → nombre, ou null si illisible ou plus de 2 décimales. */
+function ins_montant(string $v): ?float
+{
+    $v = str_replace([' ', "\u{00A0}", "\u{202F}", (string)ins_config()['devise'], '€'], '', trim($v));
+    return preg_match('/^-?\d+([.,]\d{1,2})?$/', $v) ? (float)str_replace(',', '.', $v) : null;
+}
+
+/** Valeur comparable d'une saisie : nombre (virgule ou point), date AAAA-MM-JJ ou heure HH:MM ; null si illisible ou vide. */
 function ins_valeur_comparable(string $genre, string $v)
 {
     $v = trim($v);
+    if ($genre === 'heure') {
+        return ins_heure($v);
+    }
     if ($genre === 'date') {
         $d = DateTime::createFromFormat('!Y-m-d', $v);
         return $d && $d->format('Y-m-d') === $v ? $v : null;
@@ -1256,6 +1300,11 @@ function ins_valider(array $form, array $post): array
                     $err = t('v_trop_long', ['n' => $max]);
                 } elseif ($v !== '') {
                     $err = ins_verifier_format($c, $v);
+                    if ($err === '' && $c['type'] === 'montant') {
+                        $v = ins_nombre_csv((float)ins_montant($v)); // 12,50 : deux décimales, séparateur du tableur
+                    } elseif ($err === '' && $c['type'] === 'heure') {
+                        $v = (string)ins_heure($v);                 // 09:05
+                    }
                 }
         }
         if ($err === '' && $c['obligatoire'] && !in_array($c['type'], ['case', 'commande', 'grille'], true) && $v === '') {
@@ -1290,6 +1339,26 @@ function ins_verifier_format(array $c, string $v): string
                 $fmt = function ($x) { return str_replace('.', t('decimale'), (string)$x); };
                 return $mini !== null && $maxi !== null ? t('v_entre', ['min' => $fmt($c['min']), 'max' => $fmt($c['max'])])
                     : ($mini !== null ? t('v_au_moins', ['n' => $fmt($c['min'])]) : t('v_au_plus', ['n' => $fmt($c['max'])]));
+            }
+            return '';
+        case 'montant':
+            $n = ins_montant($v);
+            if ($n === null) {
+                return t('v_montant');
+            }
+            $mini = $c['min'] !== null ? ins_valeur_comparable('nombre', (string)$c['min']) : 0.0; // pas de montant négatif sans min
+            $maxi = $c['max'] !== null ? ins_valeur_comparable('nombre', (string)$c['max']) : null;
+            if ($n < $mini || ($maxi !== null && $n > $maxi)) {
+                return t('v_montant_hors', ['bornes' => $n < 0 && $c['min'] === null ? t('v_montant_positif') : ins_aide_bornes($c)]);
+            }
+            return '';
+        case 'heure':
+            $h = ins_heure($v);
+            if ($h === null) {
+                return t('v_heure');
+            }
+            if (($c['min'] !== null && $h < ins_heure((string)$c['min'])) || ($c['max'] !== null && $h > ins_heure((string)$c['max']))) {
+                return t('v_heure_hors', ['bornes' => ins_aide_bornes($c)]);
             }
             return '';
         case 'date':
@@ -1973,6 +2042,9 @@ function ins_libelle_mail(string $libelle): string
 /** Valeur enregistrée (langue de base) affichée dans la langue du formulaire : options traduites. */
 function ins_valeur_affichee(array $c, string $v): string
 {
+    if ($v !== '' && $c['type'] === 'montant') {
+        return $v . ' ' . ins_config()['devise'];
+    }
     if ($v === '' || empty($c['options']) || !in_array($c['type'], ['choix', 'liste', 'cases', 'echelle'], true)) {
         return $v;
     }
@@ -2658,9 +2730,17 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
                 $h .= '<label class="opt lib"><input type="checkbox" id="' . $idh . '" name="' . e($nom) . '" value="1"' . $ch . $aria . '> <span>' . ins_texte($c['libelle']) . $req . '</span></label>';
                 break;
             default:
-                $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'date' => 'date'];
+                $types = ['email' => 'email', 'telephone' => 'tel', 'nombre' => 'text', 'montant' => 'text', 'date' => 'date', 'heure' => 'time'];
                 $tp = $types[$c['type']] ?? 'text';
                 $extra = $c['type'] === 'nombre' ? ' inputmode="' . ($c['entier'] ? 'numeric' : 'decimal') . '"' : '';
+                if ($c['type'] === 'montant') {
+                    $extra = ' inputmode="decimal" class="montant"';
+                }
+                if ($c['type'] === 'heure') {
+                    $extra = ($c['min'] !== null ? ' min="' . e((string)ins_heure((string)$c['min'])) . '"' : '')
+                        . ($c['max'] !== null ? ' max="' . e((string)ins_heure((string)$c['max'])) . '"' : '');
+                    $val = ins_heure($val) ?? $val;
+                }
                 if ($bornes !== '') { // bornes lues par les lecteurs d'écran avec le champ
                     $aria = $err !== '' ? str_replace($idh . '_e"', $idh . '_e ' . $idh . '_a"', $aria) : ' aria-describedby="' . $idh . '_a"';
                 }
@@ -2668,7 +2748,11 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
                     $extra .= ($c['min'] !== null ? ' min="' . e($c['min']) . '"' : '') . ($c['max'] !== null ? ' max="' . e($c['max']) . '"' : '');
                 }
                 $auto = ['email' => ' autocomplete="email"', 'telephone' => ' autocomplete="tel"'][$c['type']] ?? '';
-                $h .= '<input type="' . $tp . '" id="' . $idh . '" name="' . e($nom) . '" value="' . e($val) . '"' . $ph . $extra . $auto . $aria . '>';
+                $saisie = '<input type="' . $tp . '" id="' . $idh . '" name="' . e($nom) . '" value="' . e($val) . '"' . $ph . $extra . $auto . $aria . '>';
+                if ($c['type'] === 'montant') { // symbole monétaire (config.php : devise) après la zone de saisie
+                    $saisie = '<span class="saisie-montant">' . $saisie . '<span class="devise">' . e((string)ins_config()['devise']) . '</span></span>';
+                }
+                $h .= $saisie;
         }
         if ($groupe) {
             $h .= '</fieldset>';
@@ -2755,6 +2839,8 @@ function ins_script_conditions(): string
   function lire(genre, v) {
     v = String(v).trim();
     if (genre === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    if (genre === 'heure') { var m = /^(\d{1,2})(?:[:hH](\d{2})?)?$/.exec(v.replace(/\s/g, '')); return m ? ('0' + m[1]).slice(-2) + ':' + (m[2] || '00') : null; }
+    v = v.replace(/[\s\u00a0\u202f€]/g, '');
     return /^-?\d+([.,]\d+)?$/.test(v) ? parseFloat(v.replace(',', '.')) : null;
   }
   function comparer(c, saisie) {
@@ -2807,6 +2893,8 @@ const INS_PROPRIETES_TYPE = [
     'telephone'  => ['aide', 'obligatoire', 'defaut', 'exemple', 'unique'],
     'nombre'     => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max', 'entier', 'unique'],
     'date'       => ['aide', 'obligatoire', 'defaut', 'min', 'max'],
+    'montant'    => ['aide', 'obligatoire', 'defaut', 'exemple', 'min', 'max'],
+    'heure'      => ['aide', 'obligatoire', 'defaut', 'min', 'max'],
     'choix'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'liste'      => ['aide', 'obligatoire', 'defaut', 'options'],
     'cases'      => ['aide', 'obligatoire', 'defaut', 'options'],
@@ -3173,7 +3261,7 @@ label.lib,.lib{display:block;font-weight:600;margin-bottom:.35rem}
 .req{color:var(--err)}
 .aide{font-size:.9rem;color:#57606a;margin:.1rem 0 .4rem}
 .msg{color:var(--err);font-size:.92rem;margin-top:.3rem}
-input[type=text],input[type=email],input[type=tel],input[type=number],input[type=date],input[type=password],input[type=url],select,textarea{width:100%;padding:.5rem;border:1px solid var(--bord);border-radius:6px;font:inherit;background:#fff}
+input[type=text],input[type=email],input[type=tel],input[type=number],input[type=date],input[type=time],input[type=password],input[type=url],select,textarea{width:100%;padding:.5rem;border:1px solid var(--bord);border-radius:6px;font:inherit;background:#fff}
 textarea{min-height:6rem;resize:vertical}
 .opt{display:flex;gap:.5rem;align-items:flex-start;margin:.25rem 0;font-weight:normal}
 .opt input{margin-top:.3rem}
@@ -3218,6 +3306,9 @@ td code{white-space:nowrap}
 td.actions form{display:block;margin:.15rem 0}
 td.actions button{width:100%;white-space:nowrap}
 .langues{text-align:right;font-size:.9rem}
+.saisie-montant{display:inline-flex;align-items:center;gap:.4rem;max-width:100%}
+.saisie-montant input{width:10rem;text-align:right}
+.champ input[type=time]{width:auto;min-width:9rem}
 table.grille{width:auto;max-width:100%;background:transparent;font-size:inherit;margin:.3rem 0}
 table.grille th,table.grille td{position:static;background:transparent;border:0;border-bottom:1px solid #e3e8ee;padding:.35rem .7rem;text-align:center;font-weight:normal}
 table.grille thead th{font-weight:600;font-size:.9rem}

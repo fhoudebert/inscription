@@ -61,7 +61,7 @@
   }
   var DECORATIFS = ['titre', 'info'];
   var A_OPTIONS = ['choix', 'liste', 'cases', 'echelle'];
-  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'date'];
+  var CONDITIONNABLES = ['choix', 'liste', 'cases', 'echelle', 'case', 'nombre', 'montant', 'date', 'heure'];
   var COMPARAISONS = ['<', '<=', '>', '>='];
 
   /* ---------- État ---------- */
@@ -606,11 +606,12 @@
     if (p.indexOf('unique') >= 0) props.appendChild(caseCocher(c, 'unique', T('edi_unique')));
     if (p.indexOf('multiple') >= 0) props.appendChild(caseCocher(c, 'multiple', T('edi_multiple')));
     if (p.indexOf('min') >= 0) {
-      var tp = c.type === 'date' ? 'date' : 'number';
-      var lib = c.type === 'nombre' ? ['edi_val_min', 'edi_val_max'] : c.type === 'date' ? ['edi_date_min', 'edi_date_max'] : ['edi_long_min', 'edi_long_max'];
-      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: c.type === 'nombre' ? 'text' : tp, inputmode: 'decimal' }),
-        texte(c, 'max', { libelle: T(lib[1]), type: c.type === 'nombre' ? 'text' : tp, inputmode: 'decimal' })));
-      if (c.type === 'nombre') props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
+      var tp = { date: 'date', heure: 'time', nombre: 'text', montant: 'text' }[c.type] || 'number';
+      var lib = { nombre: ['edi_val_min', 'edi_val_max'], montant: ['edi_montant_min', 'edi_montant_max'], date: ['edi_date_min', 'edi_date_max'],
+        heure: ['edi_heure_min', 'edi_heure_max'] }[c.type] || ['edi_long_min', 'edi_long_max'];
+      props.appendChild(el('div', { classe: 'edi-deux' }, texte(c, 'min', { libelle: T(lib[0]), type: tp, inputmode: tp === 'text' ? 'decimal' : null }),
+        texte(c, 'max', { libelle: T(lib[1]), type: tp, inputmode: tp === 'text' ? 'decimal' : null })));
+      if (['nombre', 'montant', 'heure'].indexOf(c.type) >= 0) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_bornes_aide') }));
     }
     if (p.indexOf('entier') >= 0) props.appendChild(caseCocher(c, 'entier', T('edi_entier')));
     if (p.indexOf('defaut') >= 0) {
@@ -674,7 +675,7 @@
       sCible.addEventListener('change', function () { k.champ = sCible.value; k.valeurs = []; k.op = '='; k.egal = true; marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); });
       // Opérateurs : « est parmi / n'est pas parmi » pour les choix ; =, ≠, <, ≤, >, ≥ pour les nombres et les dates
       var typeC = cible ? cible.type : '';
-      var numerique = typeC === 'nombre' || typeC === 'date';
+      var numerique = ['nombre', 'montant', 'date', 'heure'].indexOf(typeC) >= 0;
       var opsComp = [['<', T('edi_cond_inf')], ['<=', T('edi_cond_inf_egal')], ['>', T('edi_cond_sup')], ['>=', T('edi_cond_sup_egal')]];
       var ops = numerique ? [['=', T('edi_cond_egal')], ['!=', T('edi_cond_different')]].concat(opsComp)
         : [['est', T('edi_cond_est')], ['nest', T('edi_cond_nest_pas')]].concat(typeC === 'echelle' ? opsComp : []);
@@ -690,8 +691,8 @@
       });
       var vals = el('div', { classe: 'edi-cond-valeurs' });
       if (cible && (numerique || comparaison)) {
-        var zVal = el('input', { type: typeC === 'date' ? 'date' : 'text', inputmode: typeC === 'date' ? null : 'decimal',
-          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' ? '' : '4' });
+        var zVal = el('input', { type: { date: 'date', heure: 'time' }[typeC] || 'text', inputmode: typeC === 'date' || typeC === 'heure' ? null : 'decimal',
+          value: (k.valeurs || [])[0] || '', 'aria-label': T('edi_cond_valeur'), placeholder: typeC === 'date' || typeC === 'heure' ? '' : '4' });
         zVal.style.width = '10rem';
         zVal.addEventListener('input', function () { var v = zVal.value.trim(); k.valeurs = v ? [v] : []; marquerModifie(); planifierApercu(); });
         vals.appendChild(zVal);

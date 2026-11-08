@@ -71,6 +71,8 @@ Réglages de la section `[formulaire]` :
 | `telephone`  | numéro de téléphone (format vérifié) | le numéro |
 | `nombre`     | nombre (bornes `min` / `max`) | le nombre |
 | `date`       | calendrier (bornes `min` / `max` au format `AAAA-MM-JJ`) | `AAAA-MM-JJ` |
+| `montant`    | somme d'argent : le symbole de `devise` (config.php) s'affiche après la zone ; accepte `12`, `12,5`, `12.50`, `1 250,00 €` ; jamais négatif sauf `min` négatif | le montant à deux décimales (`12,50`) |
+| `heure`      | sélecteur d'heure ; accepte aussi `9h`, `9h05`, `14:30` ; `min` / `max` = plage horaire (`06:00`, `23:30`) | l'heure `HH:MM` |
 | `choix`      | boutons radio : une seule réponse parmi `options` | la réponse choisie |
 | `liste`      | liste déroulante : une réponse parmi `options` | la réponse choisie |
 | `cases`      | cases à cocher : plusieurs réponses parmi `options` | `Matin \| Midi` |
@@ -114,6 +116,8 @@ entier  = oui
 - **nombre** : `min` et `max` acceptent la virgule ou le point (`2,5`), et les nombres négatifs ; `entier = oui` refuse les
   décimales. Les limites s'affichent sous la question (« Nombre entier. Entre 1 et 30. ») et sont vérifiées à l'envoi
   (« Entre 1 et 30. ») ; sur téléphone, le clavier numérique s'ouvre ;
+- **montant** : comme un nombre, avec deux décimales au plus ; sans `min`, un montant négatif est refusé ;
+- **heure** : `min = 06:00`, `max = 23:30` ;
 - **date** : `min = 2026-12-01`, `max = 2026-12-31` (format `AAAA-MM-JJ`) ; le calendrier du navigateur ne propose que ces dates ;
 - **texte**, **texte_long** : nombre de caractères minimum / maximum ;
 - une seule des deux limites suffit ; une limite mal écrite, un `min` plus grand que `max` ou une valeur `defaut` hors des
@@ -134,6 +138,7 @@ Avec `si`, un champ (ou un titre, ou un paragraphe d'info) n'apparaît qu'en fon
 | `si = "covoiturage = oui"` | pour un champ de type `case` (cochée = `oui`, non cochée = `non`) |
 | `si = "groupe > 4"` | nombre : `<`, `<=`, `>`, `>=`, et aussi `=` / `!=` (virgule ou point : `2,5`) |
 | `si = "arrivee < 2026-12-12"` | date, au format `AAAA-MM-JJ` |
+| `si = "depart < 07:00"` · `si = "transport > 100"` | heure `HH:MM` · montant |
 | `si = "satisfaction <= 2"` | échelle de notes, si toutes ses notes sont des nombres |
 | `si = "hebergement = Oui & groupe > 4"` | les deux à la fois : choix **et** comparaison |
 | `si = "hebergement = Oui \|\| groupe > 4"` | `\|\|` = **au moins une** des conditions (OU) — à activer dans `config.php` |
@@ -277,6 +282,7 @@ obligatoire = oui
 | `meeting-en.ini` | formulaire écrit avec les clés anglaises, interface en anglais |
 | `ag-membres.ini` | réponse des membres à une convocation, accès restreint (lien + mot de passe), réponse modifiable |
 | `panier.ini` | commande du panier de la semaine d'un maraîcher sur le catalogue `legumes` (données fictives) |
+| `frais.ini` | remboursement de frais : heures de départ et de retour (plage horaire), montants (avec maximum), infos conditionnelles (`depart < 07:00`, `transport > 100`) |
 | `rencontre.ini` | rencontre sur trois jours : grilles de présence, de repas (plusieurs réponses) et de covoiturage (conditionnelle), liens, courriel de confirmation |
 
 ## Diffusion et lien de partage
@@ -457,7 +463,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `lignes` / `colonnes` | `rows` / `columns` | | `grille` | `grid` |
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `confirmation` | `confirm` | | | |
-| `diffusion` | `listed` | | `telephone`, `nombre` | `phone`, `number` |
+| `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure` | `phone`, `number`, `amount`, `time` |
 | `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |

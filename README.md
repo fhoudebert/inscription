@@ -84,7 +84,8 @@ Déposé sous `prive/formulaires/reunion.ini` (par FTP, par téléversement ou c
 Exemples fournis : `simple.ini` (minimal), `exemple.ini` (inscription complète), `sondage.ini` (satisfaction, non diffusé),
 `colloque.ini` (bilingue français / anglais), `meeting-en.ini` (écrit en anglais), `ag-membres.ini` (accès restreint par mot de passe),
 `panier.ini` (commande du panier de la semaine d'un maraîcher, sur le catalogue fictif `legumes`),
-`rencontre.ini` (grilles de choix : présence, repas, covoiturage sur trois jours).
+`rencontre.ini` (grilles de choix : présence, repas, covoiturage sur trois jours),
+`frais.ini` (montants et heures : remboursement de frais de déplacement).
 Tout est expliqué dans [Créer un formulaire](docs/formulaires.md).
 
 ## Données personnelles
