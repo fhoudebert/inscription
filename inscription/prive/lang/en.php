@@ -579,7 +579,7 @@ return [
     'edi_montant_max'      => 'Maximum amount',
     'edi_heure_min'        => 'Earliest time',
     'edi_heure_max'        => 'Latest time',
-    'err_grille_saisie'    => '{f}: [{nom}] input = "{saisie}": possible values are nombre (number), montant (amount) or texte (text) (no input: choice grid)',
+    'err_grille_saisie'    => '{f}: [{nom}] input = "{saisie}": possible values are nombre (number), montant (amount), texte (text) or liste (drop-down) (no input: choice grid)',
     'v_grille_une_case'    => 'Fill in at least one cell.',
     'edi_saisie'           => 'Cell content',
     'edi_saisie_choix'     => 'Choice (buttons or checkboxes)',
@@ -594,4 +594,8 @@ return [
     'err_calcul_champ'     => '{f}: [{nom}] calculation: [{champ}] must be a number, amount or total field described before',
     'edi_calcul'           => 'Calculation',
     'edi_calcul_aide'      => '"field * unit price" terms separated by + or - (a number alone = fixed fee). Usable fields: {champs}. The total is recalculated on submission.',
+    'err_grille_valeurs'   => '{f}: [{nom}] drop-down grid (saisie = liste): give the list choices, e.g. values = "Pottery | Basketry | Hiking"',
+    'edi_saisie_liste'     => 'Drop-down list',
+    'edi_valeurs_liste'    => 'Drop-down choices (one per line)',
+    'edi_valeurs_liste_aide' => 'The same choices in every cell; the columns remain the table headings.',
 ];
