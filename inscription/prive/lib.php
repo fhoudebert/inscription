@@ -511,9 +511,9 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'message'         => trim((string)$lit('message')), // message de commande (vide = texte par défaut)
         'logo'            => trim((string)$lit('logo')),    // image de prive/images/ ; vide = logo du site ; « non » = aucun
         'logo_texte'      => trim((string)$lit('logo_texte')),
-        'confirmation'    => trim((string)$lit('confirmation')),       // « oui » ou nom du champ e-mail du répondant
+        'confirmation'    => trim((string)$lit('confirmation')),       // « oui », ou nom(s) du (des) champ(s) e-mail du répondant
         'confirmation_texte' => trim((string)$lit('confirmation_texte')),
-        'confirmation_champ' => '',
+        'confirmation_champs' => [],                                    // champs e-mail candidats, par ordre de préférence
         'fichier'         => trim((string)$lit('fichier', $id)),
         'ouverture'       => ins_date_ini($lit('ouverture'), $f, 'ouverture'),
         'fermeture'       => ins_date_ini($lit('fermeture'), $f, 'fermeture'),
@@ -693,18 +693,25 @@ function ins_analyser_formulaire(string $id, string $contenu): array
             throw new RuntimeException(t('err_nom_champ', ['f' => $f, 'nom' => $c['nom'] . '_total']));
         }
     }
-    // Courriel de confirmation au répondant : vers le champ e-mail désigné, ou le premier champ e-mail
+    // Courriel de confirmation au répondant : vers le premier champ e-mail (« oui »), ou vers un ou plusieurs
+    // champs e-mail désignés (« email_asso | email_perso ») : le courriel part à la première adresse remplie,
+    // dans l'ordre indiqué — utile quand chaque profil a son propre champ e-mail conditionnel.
     $conf = $form['confirmation'];
     if (in_array(ins_minuscules($conf), ['', 'non', 'no', 'false', '0'], true)) {
         $form['confirmation'] = '';
     } else {
         $champsMail = array_keys(array_filter($form['champs'], function ($c) { return $c['type'] === 'email'; }));
-        $cible = ins_oui($conf) ? ($champsMail[0] ?? '') : $conf;
-        if (!in_array($cible, $champsMail, true)) {
-            throw new RuntimeException(t('err_confirmation', ['f' => $f, 'champ' => ins_oui($conf) ? '' : $conf]));
+        $cibles = ins_oui($conf) ? [$champsMail[0] ?? ''] : array_values(array_unique(array_filter(array_map('trim', explode('|', $conf)), 'strlen')));
+        if (!$cibles) {
+            $cibles = [''];
         }
-        $form['confirmation'] = ins_oui($conf) ? 'oui' : $conf;
-        $form['confirmation_champ'] = $cible;
+        foreach ($cibles as $cible) {
+            if (!in_array($cible, $champsMail, true)) {
+                throw new RuntimeException(t('err_confirmation', ['f' => $f, 'champ' => ins_oui($conf) ? '' : $cible]));
+            }
+        }
+        $form['confirmation'] = ins_oui($conf) ? 'oui' : implode(' | ', $cibles);
+        $form['confirmation_champs'] = $cibles;
     }
     // Colonnes en double (une ligne de grille « vehiculer_samedi » et un champ du même nom…)
     $doubles = array_keys(array_filter(array_count_values(ins_colonnes($form + ['acces' => ''])), function ($n) { return $n > 1; }));
@@ -2301,16 +2308,18 @@ function ins_notifier(array $form, string $numero, array $valeurs, ?array $acces
  * dans la langue du répondant, avec le récapitulatif de sa réponse. Garde-fous contre l'envoi de courriels
  * à des tiers par des robots : au plus un message par adresse et par formulaire toutes les 10 minutes,
  * et au plus « confirmation_max_heure » messages par heure pour tout le site.
+ * Avec plusieurs champs e-mail désignés, un seul courriel part : à la première adresse remplie et valide
+ * (un champ masqué par sa condition est vide, il est donc sauté).
  * @return bool vrai si le message a été confié au serveur de courrier
  */
 function ins_confirmer(array $form, string $numero, array $valeurs, bool $modification): bool
 {
     $cfg = ins_config();
-    if (!$cfg['confirmation'] || $form['confirmation_champ'] === '' || !function_exists('mail')) {
+    if (!$cfg['confirmation'] || empty($form['confirmation_champs']) || !function_exists('mail')) {
         return false;
     }
-    $dest = trim((string)($valeurs[$form['confirmation_champ']] ?? ''));
-    if (!filter_var($dest, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n,;]/', $dest)) {
+    $dest = ins_adresse_confirmation($form, $valeurs);
+    if ($dest === '') {
         return false;
     }
     if (!ins_quota_confirmation($form['id'] . '|' . ins_minuscules($dest), (int)$cfg['confirmation_max_heure'])) {
@@ -2355,6 +2364,18 @@ function ins_confirmer(array $form, string $numero, array $valeurs, bool $modifi
     }
     $sujet = '=?UTF-8?B?' . base64_encode(t($modification ? 'conf_sujet_modif' : 'conf_sujet', ['titre' => $form['titre']])) . '?=';
     return @mail($dest, $sujet, $corps, $entetes);
+}
+
+/** Adresse du courriel de confirmation : la première adresse valide parmi les champs désignés ('' = aucune). */
+function ins_adresse_confirmation(array $form, array $valeurs): string
+{
+    foreach ($form['confirmation_champs'] ?? [] as $champ) {
+        $dest = trim((string)($valeurs[$champ] ?? ''));
+        if ($dest !== '' && filter_var($dest, FILTER_VALIDATE_EMAIL) && !preg_match('/[\r\n,;]/', $dest)) {
+            return $dest;
+        }
+    }
+    return '';
 }
 
 /** Libellé suivi de « : » dans un courriel (sans doubler un « ? » ou « : » final). */
