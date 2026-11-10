@@ -180,7 +180,7 @@
       (c.si || []).forEach(function (cond) {
         var cible = vus[cond.champ];
         if (!cible) res[i] = T('edi_cond_ordre', { cible: cond.champ });
-        else if (CONDITIONNABLES.indexOf(cible.type) < 0) res[i] = T('edi_cond_type', { cible: cond.champ });
+        else if (CONDITIONNABLES.indexOf(cible.type) < 0 && !(cible.type === 'grille' && cond.ref)) res[i] = T('edi_cond_type', { cible: cond.champ });
       });
       if (DECORATIFS.indexOf(c.type) < 0) vus[c.nom] = c;
     });
@@ -688,6 +688,14 @@
       if (c.si_ou && !D.conditions_ou) bloc.appendChild(el('div', { classe: 'msg', texte: T('edi_cond_ou_desactive') }));
     }
     (c.si || []).forEach(function (k, n) {
+      if (k.ref) { // condition sur une grille : affichée telle quelle, à modifier dans le texte .ini
+        bloc.appendChild(el('div', { classe: 'edi-cond' }, el('div', { classe: 'edi-cond-ligne' },
+          n > 0 ? el('span', { classe: 'edi-et', texte: T(c.si_ou ? 'edi_ou' : 'edi_et') }) : null,
+          el('code', { texte: k.champ + k.ref + ' ' + k.op + ' ' + (k.valeurs || []).join(' | ') }),
+          bouton('✕', T('edi_cond_retirer'), function () { c.si.splice(n, 1); marquerModifie(); dessinerProps(); dessinerListe(); planifierApercu(0); })),
+          el('p', { classe: 'edi-aide', texte: T('edi_cond_grille') })));
+        return;
+      }
       var cible = cibles.filter(function (x) { return x.nom === k.champ; })[0];
       var sCible = el('select', { 'aria-label': T('edi_cond_champ') },
         (cible ? [] : [el('option', { value: k.champ, texte: k.champ + ' ⚠' })]).concat(cibles.map(function (x) {

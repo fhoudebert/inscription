@@ -870,17 +870,28 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         if ($morceau === '') {
             continue;
         }
-        if (!preg_match('/^([a-z][a-z0-9_]*)\s*(!=|<=|>=|=|<|>)\s*(.+)$/is', $morceau, $m)) {
+        // cible : « champ », ou pour une grille « champ[ligne][colonne].agrégat » (voir ins_condition_grille)
+        if (!preg_match('/^([a-z][a-z0-9_]*)((?:\s*\[[^\]]*\]){0,2})(?:\s*\.\s*([a-z]+))?\s*(!=|<=|>=|=|<|>)\s*(.+)$/is', $morceau, $mc)) {
             throw new RuntimeException(t('err_condition', ['f' => $f, 'nom' => $nom, 'cond' => $morceau]));
         }
+        $m = [$mc[0], $mc[1], $mc[4], $mc[5]];
+        $selecteur = $mc[2];
+        $agregat = ins_minuscules($mc[3] ?? '');
         $cible = $m[1];
         if (!isset($connus[$cible])) {
             throw new RuntimeException(t('err_condition_ordre', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
         }
         $valeurs = array_values(array_filter(array_map('trim', explode('|', $m[3])), 'strlen'));
         $c = $connus[$cible];
-        if (in_array($c['type'], ['grille', 'commande'], true)) {
+        if ($c['type'] === 'commande' || ($c['type'] === 'grille' && $selecteur === '' && $agregat === '')) {
             throw new RuntimeException(t('err_condition_grille', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
+        }
+        if ($c['type'] === 'grille') {
+            $res[] = ins_condition_grille($c, $selecteur, $agregat, $m[2], $valeurs, $f, $nom);
+            continue;
+        }
+        if ($selecteur !== '' || $agregat !== '') {
+            throw new RuntimeException(t('err_condition_hors_grille', ['f' => $f, 'nom' => $nom, 'cible' => $cible]));
         }
         $op = $m[2];
         $comparaison = !in_array($op, ['=', '!='], true);
@@ -918,6 +929,136 @@ function ins_conditions(string $expr, array $connus, string $f, string $nom): ar
         $res[] = ['champ' => $cible, 'op' => $op, 'egal' => $op === '=', 'valeurs' => $valeurs, 'num' => ''];
     }
     return $res;
+}
+
+/**
+ * Condition « si » portant sur une GRILLE : une case, une ligne, une colonne ou toute la grille.
+ *
+ *   champ[ligne][colonne]            une case                     si = "repas[Samedi soir][Carnivore] > 0"
+ *   champ[ligne]                     une ligne (ou case, grille à une colonne)
+ *   champ[*][colonne] ou champ[][c]  une colonne entière
+ *   champ.agrégat                    toute la grille              si = "repas.nb > 0"
+ *   champ[ligne][*].agrégat          une ligne entière
+ *
+ * Agrégats : « nb » = nombre de cases renseignées et non nulles (au moins une : « > 0 »), « somme », « max »
+ * (grilles de nombres, de montants ou de listes de nombres). Ligne et colonne s'écrivent comme leur libellé
+ * ou comme leur repère de colonne du CSV (casse, accents et espaces sans importance). Plusieurs cases visées
+ * demandent un agrégat. Sans agrégat, une case se compare comme un champ simple (=, !=, <, > pour les nombres).
+ * @return array condition « si » : champ, op, egal, valeurs, num, agg, ref (écriture d'origine), cols, noms (noms HTML des cases)
+ */
+function ins_condition_grille(array $c, string $selecteur, string $agregat, string $op, array $valeurs, string $f, string $nom): array
+{
+    $cible = $c['nom'];
+    $parColonne = $c['saisie'] !== '' && count($c['colonnes_id']) > 1;
+    preg_match_all('/\[([^\]]*)\]/', $selecteur, $mm);
+    $sel = array_map('trim', $mm[1]);
+    $ref = '';
+    foreach ($sel as $x) {
+        $ref .= '[' . $x . ']';
+    }
+    $idl = isset($sel[0]) && $sel[0] !== '' && $sel[0] !== '*' ? ins_id_ligne($sel[0]) : null;
+    $idc = isset($sel[1]) && $sel[1] !== '' && $sel[1] !== '*' ? ins_id_ligne($sel[1]) : null;
+    $arg = ['f' => $f, 'nom' => $nom, 'cible' => $cible];
+    if ($idl !== null && !in_array($idl, $c['lignes_id'], true)) {
+        throw new RuntimeException(t('err_condition_ligne', $arg + ['ligne' => $sel[0], 'liste' => implode(' | ', $c['lignes'])]));
+    }
+    if ($idc !== null) {
+        if ($parColonne) {
+            if (!in_array($idc, $c['colonnes_id'], true)) {
+                throw new RuntimeException(t('err_condition_colonne', $arg + ['colonne' => $sel[1], 'liste' => implode(' | ', $c['options'])]));
+            }
+        } elseif ($c['saisie'] !== '' && count($c['colonnes_id']) === 1 && $idc === $c['colonnes_id'][0]) {
+            $idc = null; // grille à une seule colonne : la nommer revient à ne rien préciser
+        } else {
+            throw new RuntimeException(t('err_condition_colonne_unique', $arg));
+        }
+    }
+    $cases = array_values(array_filter(ins_cellules_grille($c), function ($cel) use ($idl, $idc, $parColonne) {
+        return ($idl === null || $cel['idl'] === $idl) && ($idc === null || !$parColonne || $cel['idc'] === $idc);
+    }));
+    $alias = ['somme' => 'somme', 'sum' => 'somme', 'nb' => 'nb', 'count' => 'nb', 'max' => 'max'];
+    if ($agregat !== '' && !isset($alias[$agregat])) {
+        throw new RuntimeException(t('err_condition_agregat', $arg + ['agregat' => $agregat]));
+    }
+    $agg = $alias[$agregat] ?? '';
+    $estNombre = function ($o) { return ins_valeur_comparable('nombre', (string)$o) !== null; };
+    $nombres = in_array($c['saisie'], ['nombre', 'montant'], true) || ($c['saisie'] === 'liste' && !array_filter($c['valeurs'], function ($o) use ($estNombre) { return !$estNombre($o); }));
+    if (in_array($agg, ['somme', 'max'], true) && !$nombres) {
+        throw new RuntimeException(t('err_condition_agregat_nombre', $arg + ['agregat' => $agregat]));
+    }
+    if ($agg === '' && count($cases) > 1) {
+        throw new RuntimeException(t('err_condition_grille_cases', $arg));
+    }
+    $comparaison = !in_array($op, ['=', '!='], true);
+    $num = $agg !== '' || $nombres;
+    if ($num) {
+        if ($comparaison && count($valeurs) !== 1) {
+            throw new RuntimeException(t('err_condition_valeur', $arg + ['valeur' => implode(' | ', $valeurs)]));
+        }
+        foreach ($valeurs as $v) {
+            if (!$estNombre($v)) {
+                throw new RuntimeException(t('err_condition_valeur', $arg + ['valeur' => $v]));
+            }
+        }
+    } else {
+        if ($comparaison) {
+            throw new RuntimeException(t('err_condition_comparaison', $arg + ['op' => $op]));
+        }
+        $permis = $c['saisie'] === 'liste' ? $c['valeurs'] : ($c['saisie'] === '' ? $c['options'] : null);
+        foreach ($valeurs as $v) {
+            if ($permis !== null && !in_array(ins_minuscules($v), array_map('ins_minuscules', $permis), true)) {
+                throw new RuntimeException(t('err_condition_option', ['f' => $f, 'nom' => $nom, 'valeur' => $v, 'cible' => $cible]));
+            }
+        }
+    }
+    return [
+        'champ' => $cible, 'op' => $op, 'egal' => $num ? $op !== '!=' : $op === '=', 'valeurs' => $valeurs,
+        'num' => $num ? 'nombre' : '', 'agg' => $agg, 'ref' => $ref . ($agregat !== '' ? '.' . $agregat : ''),
+        'cols' => array_column($cases, 'col'),
+        'noms' => array_map(function ($cel) use ($c) { return ins_nom_html_cellule($c, $cel); }, $cases),
+    ];
+}
+
+/** Nom HTML (attribut name) d'une case de grille, tel que ins_rendu_grille le produit. */
+function ins_nom_html_cellule(array $c, array $cel): string
+{
+    if ($c['saisie'] === '') {
+        return $c['nom'] . '[' . $cel['idl'] . ']' . ($c['multiple'] ? '[]' : '');
+    }
+    return $c['nom'] . '[' . $cel['idl'] . ']' . ($cel['idc'] !== null ? '[' . $cel['idc'] . ']' : '');
+}
+
+/**
+ * Agrégat des cases d'une grille : « nb » = cases renseignées et non nulles (0 compte pour vide),
+ * « somme » des nombres lus, « max » (null s'il n'y a aucun nombre).
+ * @param string[] $vals
+ */
+function ins_agreger(string $agg, array $vals): ?float
+{
+    $nombres = [];
+    $nb = 0;
+    foreach ($vals as $v) {
+        $v = trim($v);
+        if ($v === '') {
+            continue;
+        }
+        $x = ins_valeur_comparable('nombre', $v);
+        if ($x === null) {
+            $nb++; // texte, choix : renseigné
+            continue;
+        }
+        $nombres[] = (float)$x;
+        if ((float)$x != 0.0) {
+            $nb++;
+        }
+    }
+    if ($agg === 'nb') {
+        return (float)$nb;
+    }
+    if ($agg === 'somme') {
+        return (float)array_sum($nombres);
+    }
+    return $nombres ? (float)max($nombres) : null;
 }
 
 /**
@@ -1309,6 +1450,9 @@ function ins_condition_vraie(array $cond, array $valeurs, array $visibles, array
     if (empty($visibles[$cible])) {
         return false;
     }
+    if (!empty($cond['cols'])) {
+        return ins_condition_grille_vraie($cond, $valeurs);
+    }
     $v = $valeurs[$cible] ?? '';
     if (!empty($cond['num'])) {
         return ins_comparer($cond, (string)$v);
@@ -1318,6 +1462,29 @@ function ins_condition_vraie(array $cond, array $valeurs, array $visibles, array
     } else {
         $choisis = $v === '' ? [] : array_map('ins_minuscules', array_map('trim', explode('|', $v)));
     }
+    $trouve = false;
+    foreach ($cond['valeurs'] as $attendu) {
+        if (in_array(ins_minuscules($attendu), $choisis, true)) {
+            $trouve = true;
+            break;
+        }
+    }
+    return $trouve === $cond['egal'];
+}
+
+/** Condition « si » sur des cases de grille : agrégat comparé, ou case unique (nombre ou choix). */
+function ins_condition_grille_vraie(array $cond, array $valeurs): bool
+{
+    $vals = array_map(function ($col) use ($valeurs) { return trim((string)($valeurs[$col] ?? '')); }, $cond['cols']);
+    if ($cond['agg'] !== '') {
+        $n = ins_agreger($cond['agg'], $vals);
+        return $n !== null && ins_comparer($cond, sprintf('%.4F', $n));
+    }
+    $v = $vals[0] ?? '';
+    if (!empty($cond['num'])) {
+        return ins_comparer($cond, $v);
+    }
+    $choisis = $v === '' ? [] : array_map('ins_minuscules', array_map('trim', explode('|', $v)));
     $trouve = false;
     foreach ($cond['valeurs'] as $attendu) {
         if (in_array(ins_minuscules($attendu), $choisis, true)) {
@@ -2803,7 +2970,7 @@ function ins_rendu_champs(array $form, array $brut, array $erreurs, bool $premie
 {
     $h = '';
     foreach ($form['champs'] as $nom => $c) {
-        $si = $c['si'] ? ' data-si="' . e(json_encode($c['si'], JSON_UNESCAPED_UNICODE)) . '"' . ($c['si_ou'] ? ' data-si-ou' : '') : '';
+        $si = $c['si'] ? ' data-si="' . e(json_encode(array_map(function ($x) { unset($x['cols']); return $x; }, $c['si']), JSON_UNESCAPED_UNICODE)) . '"' . ($c['si_ou'] ? ' data-si-ou' : '') : '';
 
         if ($c['type'] === 'titre') {
             $h .= '<h2 data-bloc="' . e($nom) . '"' . $si . '>' . e($c['libelle']) . '</h2>';
@@ -3139,10 +3306,43 @@ function ins_script_conditions(): string
       default: return r[0] >= 0;
     }
   }
+  // Conditions sur une grille : c.noms = noms HTML des cases visées, c.agg = nb | somme | max (ou vide : une seule case)
+  function lireCase(nom) {
+    var res = [];
+    form.querySelectorAll('[name="' + nom + '"]').forEach(function (el) {
+      if (el.type === 'radio' || el.type === 'checkbox') { if (el.checked) res.push(el.value); }
+      else if (el.value.trim() !== '') res.push(el.value.trim());
+    });
+    return res.join(' | ');
+  }
+  function agreger(agg, vals) {
+    var nombres = [], nb = 0;
+    vals.forEach(function (v) {
+      if (v === '') return;
+      var x = lire('nombre', v);
+      if (x === null) { nb++; return; }
+      nombres.push(x);
+      if (x !== 0) nb++;
+    });
+    if (agg === 'nb') return nb;
+    if (agg === 'somme') return nombres.reduce(function (a, b) { return a + b; }, 0);
+    return nombres.length ? Math.max.apply(null, nombres) : null;
+  }
+  function condGrille(c) {
+    var bloc = form.querySelector('.champ[data-nom="' + c.champ + '"]');
+    if (!bloc || bloc.classList.contains('cache')) return false; // grille masquée
+    var vals = c.noms.map(lireCase);
+    if (c.agg) { var n = agreger(c.agg, vals); return n !== null && comparer(c, String(n)); }
+    var v = vals[0] || '';
+    if (c.num) return comparer(c, v);
+    var choisis = v === '' ? [] : v.split('|').map(function (x) { return x.trim().toLowerCase(); });
+    return c.valeurs.some(function (x) { return choisis.indexOf(x.toLowerCase()) >= 0; }) === c.egal;
+  }
   function maj() {
     blocs.forEach(function (bloc) {
       var conds = JSON.parse(bloc.getAttribute('data-si')), ou = bloc.hasAttribute('data-si-ou');
       var res = conds.map(function (c) {
+        if (c.noms) return condGrille(c);
         var v = valeurs(c.champ);
         if (v === null) return false; // champ visé masqué
         if (c.num) return comparer(c, v[0] || '');
@@ -3213,7 +3413,7 @@ function ins_modele(array $form): array
             'min' => (string)($c['min'] ?? ''), 'max' => (string)($c['max'] ?? ''), 'unique' => (bool)$c['unique'], 'entier' => (bool)$c['entier'],
             'exemple' => $c['exemple'], 'gauche' => $c['gauche'], 'droite' => $c['droite'], 'catalogue' => $c['catalogue'],
             'lignes' => array_values($c['lignes']), 'multiple' => (bool)$c['multiple'], 'saisie' => $c['saisie'], 'calcul' => $c['calcul'], 'valeurs' => array_values($c['valeurs']),
-            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])]; }, $c['si']),
+            'si' => array_map(function ($x) { return ['champ' => $x['champ'], 'op' => $x['op'], 'egal' => $x['egal'], 'valeurs' => array_values($x['valeurs'])] + (($x['ref'] ?? '') !== '' ? ['ref' => $x['ref']] : []); }, $c['si']),
             'si_ou' => (bool)$c['si_ou'],
             'trad' => (object)$c['trad'],
         ];
@@ -3445,6 +3645,9 @@ function ins_modele_vers_ini(string $id, array $m): string
             if (($types[$cible] ?? '') === 'case') {
                 $vals = array_map(function ($v) { return ins_oui($v) ? 'oui' : 'non'; }, $vals);
             }
+            // Condition sur une grille : « [ligne][colonne].agrégat » conservé tel quel (non modifiable dans l'éditeur visuel)
+            $ref = ins_modele_texte($cond['ref'] ?? '');
+            $cible .= preg_match('/^(\[[^\]\r\n]*\]){0,2}(\.[a-z]+)?$/i', $ref) ? $ref : '';
             $op = ins_modele_texte($cond['op'] ?? '');
             if (in_array($op, ['<', '<=', '>', '>='], true)) {
                 $conds[] = $cible . ' ' . $op . ' ' . $vals[0];
