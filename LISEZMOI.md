@@ -1,3 +1,5 @@
+[English version](README.md)
+
 # inscription — formulaires d'inscription et sondages pour hébergement mutualisé
 
 Recueillir des inscriptions, des réponses à un sondage ou des **commandes** sur un **hébergement mutualisé** (Free, OVH, o2switch, Infomaniak, Ionos…),

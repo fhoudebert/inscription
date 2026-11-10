@@ -114,7 +114,7 @@ return [
     'adm_jeton'           => 'Action refused (page too old): reload the page and try again.',
     'adm_gestion_off'     => 'Adding and deleting forms is disabled ("admin_gestion" in config.php).',
     'adm_test_encours'    => 'Checking that the data folder is protected…',
-    'adm_test_expose'     => 'Warning: the data folder can be read from the web! Your host ignores the .htaccess file. Move the "prive" folder out of the public part of the site (see docs/administration.md, "Zone privée").',
+    'adm_test_expose'     => 'Warning: the data folder can be read from the web! Your host ignores the .htaccess file. Move the "prive" folder out of the public part of the site (see docs/admin-en.md, "Private area").',
     'adm_test_protege'    => 'Data folder protected: it cannot be accessed from the web.',
     'adm_test_hors_site'  => 'The data folder is outside the public part of the site.',
     'adm_formulaires'     => 'Forms',

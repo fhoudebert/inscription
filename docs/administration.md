@@ -1,6 +1,6 @@
 # Administration
 
-[← Retour au README](../README.md) · [Créer un formulaire](formulaires.md)
+[← Retour au LISEZMOI](../LISEZMOI.md) · [Créer un formulaire](formulaires.md) · [English version](admin-en.md)
 
 Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Éditeur de formulaires](#éditeur-de-formulaires) ·
 [Récupérer les réponses](#récupérer-les-réponses) ·

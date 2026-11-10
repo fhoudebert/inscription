@@ -1,6 +1,6 @@
 # Créer un formulaire
 
-[← Retour au README](../README.md) · [Administration](administration.md)
+[← Retour au LISEZMOI](../LISEZMOI.md) · [Administration](administration.md) · [English version](forms-en.md)
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
@@ -104,6 +104,7 @@ Réglages de la section `[formulaire]` :
 | `entier`      | pour `nombre` : `oui` = nombre entier seulement (pas de virgule) |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ### Limites (min et max)
 
@@ -125,7 +126,6 @@ entier  = oui
 - **texte**, **texte_long** : nombre de caractères minimum / maximum ;
 - une seule des deux limites suffit ; une limite mal écrite, un `min` plus grand que `max` ou une valeur `defaut` hors des
   limites rendent le formulaire invalide, avec un message qui le dit.
-| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels
 
