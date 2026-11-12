@@ -1,6 +1,6 @@
 # Créer un formulaire
 
-[← Retour au README](../README.md) · [Administration](administration.md)
+[← Retour au LISEZMOI](../LISEZMOI.md) · [Administration](administration.md) · [English version](forms-en.md)
 
 Sommaire : [Principe](#principe) · [Règles d'écriture](#règles-décriture) · [Section formulaire](#section-formulaire) ·
 [Types de champs](#types-de-champs) · [Propriétés d'un champ](#propriétés-dun-champ) ·
@@ -51,7 +51,7 @@ Réglages de la section `[formulaire]` :
 | `fermeture` | date/heure de clôture (une date seule = jusqu'à 23 h 59) | — |
 | `places`    | nombre maximal de réponses (0 = illimité) | 0 |
 | `notifier`  | adresse(s) recevant un courriel à chaque réponse (séparées par des virgules) | — |
-| `confirmation` | `oui` : courriel de confirmation au répondant, à l'adresse du premier champ `email` ; ou le nom du champ `email` à utiliser (voir [Courriel de confirmation](#courriel-de-confirmation)) | pas de courriel |
+| `confirmation` | `oui` : courriel de confirmation au répondant, à l'adresse du premier champ `email` ; ou le nom du champ `email` à utiliser, ou plusieurs noms séparés par `\|` (première adresse remplie) (voir [Courriel de confirmation](#courriel-de-confirmation)) | pas de courriel |
 | `confirmation_texte` | texte en tête du courriel de confirmation (traduisible) | le message `merci` |
 | `diffusion` | `oui` = listé sur la page d'accueil ; `non` = accessible uniquement par le [lien de partage](#diffusion-et-lien-de-partage) | oui |
 | `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
@@ -104,6 +104,7 @@ Réglages de la section `[formulaire]` :
 | `entier`      | pour `nombre` : `oui` = nombre entier seulement (pas de virgule) |
 | `unique`      | `oui` = refuse une valeur déjà enregistrée (par ex. sur l'e-mail, pour éviter les doubles inscriptions) |
 | `si`          | condition d'affichage (voir ci-dessous) |
+| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ### Limites (min et max)
 
@@ -125,7 +126,6 @@ entier  = oui
 - **texte**, **texte_long** : nombre de caractères minimum / maximum ;
 - une seule des deux limites suffit ; une limite mal écrite, un `min` plus grand que `max` ou une valeur `defaut` hors des
   limites rendent le formulaire invalide, avec un message qui le dit.
-| `catalogue`   | pour `commande` : nom du catalogue de produits (`prive/catalogues/<nom>.csv`) |
 
 ## Champs conditionnels
 
@@ -287,6 +287,29 @@ confirmation_texte = "Merci, votre inscription est enregistrée. Programme : htt
 ```
 
 - il faut un champ de type `email` (le premier, avec `oui`) ; le courriel part à l'adresse saisie, après l'enregistrement ;
+- **plusieurs champs e-mail** (par exemple un par profil, affichés sous condition) : indiquez-les tous, séparés par `|`.
+  Un seul courriel part, à la **première adresse remplie** dans l'ordre indiqué ; un champ masqué par sa condition est vide,
+  donc sauté. Dans l'éditeur, dès qu'il y a deux champs e-mail, on coche ceux à utiliser (ordre du formulaire) :
+
+  ```ini
+  [formulaire]
+  confirmation = "email_asso | email_perso"
+
+  [profil]
+  type    = choix
+  libelle = "Vous êtes :"
+  options = "Association | Particulier"
+
+  [email_asso]
+  type    = email
+  libelle = "Courriel de l'association"
+  si      = "profil = Association"
+
+  [email_perso]
+  type    = email
+  libelle = "Votre courriel"
+  si      = "profil = Particulier"
+  ```
 - contenu : `confirmation_texte` (sinon le message `merci`), le numéro de réponse (si `afficher_numero`), puis toutes les
   réponses, **dans la langue du répondant** ; après une modification (accès restreint `modifiable`), le sujet l'indique ;
 - la page de remerciement signale l'envoi ; « Répondre » au courriel écrit à la première adresse de `notifier` ;

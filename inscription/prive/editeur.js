@@ -337,6 +337,7 @@
     if (dependants.length) msg += '\n' + T('edi_confirmer_suppr_cond', { n: dependants.length });
     if (!confirm(msg)) return;
     dependants.forEach(function (x) { x.si = x.si.filter(function (k) { return k.champ !== c.nom; }); });
+    if (c.type === 'email') confRenommer(c.nom, null);
     S.modele.champs.splice(i, 1);
     S.sel = Math.min(i, S.modele.champs.length - 1);
     changementStructure();
@@ -368,6 +369,22 @@
     c.checked = !!obj[cle];
     c.addEventListener('change', function () { obj[cle] = c.checked; marquerModifie(); if (apres) apres(); planifierApercu(0); });
     return el('label', { classe: 'opt edi-case' }, c, el('span', { texte: libelle }));
+  }
+  /** Champs e-mail visés par la clé « confirmation » : '' → aucun, 'oui' → le premier champ e-mail, sinon « a | b ». */
+  function confCibles(v, mails) {
+    v = String(v || '').trim();
+    if (!v) return [];
+    if (v === 'oui') return mails.length ? [mails[0].nom] : [];
+    return v.split('|').map(function (s) { return s.trim(); }).filter(function (s, i, t) { return s && t.indexOf(s) === i; });
+  }
+  /** Renomme (nouveau = nom) ou retire (nouveau = null) un champ dans la clé « confirmation ». */
+  function confRenommer(ancien, nouveau) {
+    var g = S.modele.formulaire;
+    if (!g || !g.confirmation || g.confirmation === 'oui') return;
+    var l = confCibles(g.confirmation, []);
+    if (l.indexOf(ancien) < 0) return;
+    l = l.map(function (n) { return n === ancien ? nouveau : n; }).filter(function (n, i, t) { return n && t.indexOf(n) === i; });
+    g.confirmation = l.join(' | ');
   }
   function choixListe(obj, cle, valeurs, libelle, apres) {
     var id = 'p-' + cle + '-' + Math.random().toString(36).slice(2, 7);
@@ -470,11 +487,31 @@
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
     // Courriel de confirmation au répondant : vers un champ e-mail du formulaire
     var mails = S.modele.champs.filter(function (c) { return c.type === 'email'; });
-    var valsConf = [['', T('edi_confirmation_non')]].concat(mails.map(function (c, i) {
-      return [i === 0 && g.confirmation === 'oui' ? 'oui' : c.nom, T('edi_confirmation_vers', { champ: c.libelle || c.nom })];
-    }));
-    if (g.confirmation && g.confirmation !== 'oui' && !mails.some(function (c) { return c.nom === g.confirmation; })) valsConf.push([g.confirmation, g.confirmation + ' ⚠']);
-    props.appendChild(choixListe(g, 'confirmation', valsConf, T('edi_confirmation'), dessinerProps));
+    var ciblesConf = confCibles(g.confirmation, mails);
+    if (mails.length < 2 && ciblesConf.length < 2) {
+      var valsConf = [['', T('edi_confirmation_non')]].concat(mails.map(function (c, i) {
+        return [i === 0 && g.confirmation === 'oui' ? 'oui' : c.nom, T('edi_confirmation_vers', { champ: c.libelle || c.nom })];
+      }));
+      if (g.confirmation && g.confirmation !== 'oui' && !mails.some(function (c) { return c.nom === g.confirmation; })) valsConf.push([g.confirmation, g.confirmation + ' ⚠']);
+      props.appendChild(choixListe(g, 'confirmation', valsConf, T('edi_confirmation'), dessinerProps));
+    } else {
+      // Plusieurs champs e-mail (souvent conditionnels) : cocher ceux à utiliser ; le courriel part à la première adresse remplie
+      var inconnus = ciblesConf.filter(function (n) { return !mails.some(function (c) { return c.nom === n; }); });
+      var cases = mails.map(function (c) { return { nom: c.nom, texte: T('edi_confirmation_vers', { champ: c.libelle || c.nom }) }; })
+        .concat(inconnus.map(function (n) { return { nom: n, texte: n + ' ⚠' }; }));
+      var boite = el('div', { classe: 'edi-conf-cases', role: 'group', 'aria-label': T('edi_confirmation') });
+      cases.forEach(function (x) {
+        var cc = el('input', { type: 'checkbox' });
+        cc.checked = ciblesConf.indexOf(x.nom) >= 0;
+        cc.addEventListener('change', function () {
+          var choisis = cases.filter(function (y) { return y.nom === x.nom ? cc.checked : ciblesConf.indexOf(y.nom) >= 0; }).map(function (y) { return y.nom; });
+          g.confirmation = !choisis.length ? '' : (g.confirmation === 'oui' && choisis.length === 1 && choisis[0] === mails[0].nom) ? 'oui' : choisis.join(' | ');
+          marquerModifie(); dessinerProps(); planifierApercu(0);
+        });
+        boite.appendChild(el('label', { classe: 'opt edi-case' }, cc, el('span', { texte: x.texte })));
+      });
+      props.appendChild(ligne(T('edi_confirmation'), boite, T('edi_confirmation_plusieurs_aide')));
+    }
     if (!mails.length) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_sans_mail') }));
     else if (g.confirmation && !D.confirmation_site) props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_confirmation_site') }));
 
@@ -564,6 +601,7 @@
         c.nom = v; c._auto = false;
         // Les conditions qui visaient l'ancien nom suivent le renommage
         S.modele.champs.forEach(function (x) { (x.si || []).forEach(function (k) { if (k.champ === ancien) k.champ = v; }); });
+        confRenommer(ancien, v); // le courriel de confirmation suit aussi
         marquerModifie(); dessinerListe(); planifierApercu();
       });
       props.appendChild(ligne(T('edi_nom_colonne'), zNom, deco ? T('edi_nom_deco') : T('edi_nom_aide'), 'p-nom'));

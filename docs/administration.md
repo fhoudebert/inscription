@@ -1,6 +1,6 @@
 # Administration
 
-[← Retour au README](../README.md) · [Créer un formulaire](formulaires.md)
+[← Retour au LISEZMOI](../LISEZMOI.md) · [Créer un formulaire](formulaires.md) · [English version](admin-en.md)
 
 Sommaire : [Installation](#installation) · [La page admin.php](#la-page-adminphp) · [Éditeur de formulaires](#éditeur-de-formulaires) ·
 [Récupérer les réponses](#récupérer-les-réponses) ·
@@ -80,7 +80,7 @@ La page a trois colonnes :
   Un clic sur un champ de l'aperçu le sélectionne. Au-dessus : « Formulaire valide » ou l'erreur à corriger.
 
 Le **nom de colonne** d'un nouveau champ se déduit de sa question (« Nom et prénom » → `nom_et_prenom`) tant qu'on ne le
-modifie pas ; renommer un champ met à jour les conditions qui le visent. Supprimer un champ retire les conditions qui
+modifie pas ; renommer un champ met à jour les conditions qui le visent (et le réglage du courriel de confirmation). Supprimer un champ retire les conditions qui
 en dépendaient (après confirmation).
 
 **Formulaires multilingues** : dès qu'une autre langue est cochée dans les réglages, des onglets **Français (base) · English**
