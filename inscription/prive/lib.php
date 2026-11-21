@@ -21,7 +21,7 @@ const INS_ACCES_ECHECS_MAX = 10;      // essais de mot de passe avant blocage te
 const INS_ACCES_BLOCAGE = 15 * 60;    // durée du blocage (secondes)
 const INS_ACCES_DUREE = 2 * 3600;     // durée de la connexion après saisie du mot de passe
 // Textes traduisibles : « libelle_en = ... » donne la traduction anglaise de « libelle »
-const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte', 'confirmation_texte'];
+const INS_TRAD_FORMULAIRE = ['titre', 'intro', 'merci', 'bouton', 'message', 'logo_texte', 'confirmation_texte', 'numero_texte'];
 // Images (logos) : rangées dans prive/images/, servies par index.php?image=… ; SVG refusé (peut contenir du script)
 const INS_TYPES_IMAGE = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
 const INS_MIME_IMAGE = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
@@ -61,6 +61,7 @@ const INS_CLES_FORMULAIRE = [
     'ouverture' => ['ouverture', 'opens'], 'fermeture' => ['fermeture', 'closes'],
     'places' => ['places', 'limit'], 'notifier' => ['notifier', 'notify'],
     'diffusion' => ['diffusion', 'listed'], 'afficher_numero' => ['afficher_numero', 'show_number'],
+    'numero_texte' => ['numero_texte', 'number_text'],
     'langue' => ['langue', 'language'], 'langues' => ['langues', 'languages'], 'cache' => ['cache', 'hidden'],
     'acces' => ['acces', 'accès', 'access'], 'modifiable' => ['modifiable', 'editable'],
 ];
@@ -526,6 +527,7 @@ function ins_analyser_formulaire(string $id, string $contenu): array
         'acces'           => $acces,
         'modifiable'      => $acces !== '' && ins_oui($lit('modifiable', 'oui')),
         'afficher_numero' => ins_oui($lit('afficher_numero', 'oui')),
+        'numero_texte'    => trim((string)$lit('numero_texte')),   // texte devant le numéro (vide = texte par défaut)
         'langue'          => $base,
         'langues'         => $langues,
         'trad'            => [],
@@ -2329,7 +2331,7 @@ function ins_confirmer(array $form, string $numero, array $valeurs, bool $modifi
     $intro = $form['confirmation_texte'] !== '' ? $form['confirmation_texte'] : ($form['merci'] !== '' ? $form['merci'] : t('merci_defaut'));
     $corps = ins_texte_brut($intro) . "\n\n";
     if ($form['afficher_numero']) {
-        $corps .= t('numero_reponse') . ' ' . $numero . "\n\n";
+        $corps .= ins_numero_texte($form) . ' ' . $numero . "\n\n";
     }
     $corps .= t($modification ? 'conf_recap_modif' : 'conf_recap', ['titre' => $form['titre']]) . "\n\n";
     foreach ($form['champs'] as $nom => $c) {
@@ -2364,6 +2366,12 @@ function ins_confirmer(array $form, string $numero, array $valeurs, bool $modifi
     }
     $sujet = '=?UTF-8?B?' . base64_encode(t($modification ? 'conf_sujet_modif' : 'conf_sujet', ['titre' => $form['titre']])) . '?=';
     return @mail($dest, $sujet, $corps, $entetes);
+}
+
+/** Texte placé devant le numéro de réponse (clé « numero_texte » du formulaire, sinon texte par défaut de la langue). */
+function ins_numero_texte(array $form): string
+{
+    return ($form['numero_texte'] ?? '') !== '' ? $form['numero_texte'] : t('numero_reponse');
 }
 
 /** Adresse du courriel de confirmation : la première adresse valide parmi les champs désignés ('' = aucune). */
@@ -3413,7 +3421,7 @@ const INS_PROPRIETES_TYPE = [
 function ins_modele(array $form): array
 {
     $g = [];
-    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'confirmation', 'confirmation_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
+    foreach (['titre', 'intro', 'merci', 'bouton', 'message', 'logo', 'logo_texte', 'confirmation', 'confirmation_texte', 'numero_texte', 'fichier', 'notifier', 'langue', 'acces'] as $k) {
         $g[$k] = (string)$form[$k];
     }
     // vide = nom du formulaire (défaut) : ne pas figer un nom provisoire ou celui d'un autre formulaire
@@ -3568,6 +3576,12 @@ function ins_modele_vers_ini(string $id, array $m): string
     }
     if (array_key_exists('afficher_numero', $g) && empty($g['afficher_numero'])) {
         $l[] = 'afficher_numero = non';
+    } else {
+        $tr = [];
+        foreach ($autres as $lg) {
+            $tr[$lg] = $trad($g['trad'] ?? [], $lg, 'numero_texte');
+        }
+        $ecrire($l, 'numero_texte', ins_modele_texte($g['numero_texte'] ?? ''), $tr);
     }
 
     $types = [];

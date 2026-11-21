@@ -60,6 +60,7 @@ Settings of the `[formulaire]` section:
 | `acces`     | `personnel` = restricted access with a personal link + password; `lien` = with a personal link only (see [Restricted access](#restricted-access)) | — (open access) |
 | `modifiable` | restricted access: `oui` = each person can come back and change their answer; `non` = one final answer | oui |
 | `afficher_numero` | `non` = do not show the answer number after submitting (useful for an anonymous survey) | oui |
+| `numero_texte` | text before the answer number, after submitting and in the confirmation email, e.g. `"Your registration number:"` (translatable) | "Numéro de votre réponse :" ("Your answer number:" in English) |
 | `langue`    | interface language for this form (`fr`, `en`…): buttons, error messages, value of checkboxes | that of `config.php` |
 | `langues`   | multilingual form: languages offered, e.g. `"fr \| en"` (see [Multilingual form](#multilingual-form)) | — |
 | `message`   | order form: template of the message sent to the customer when their order is ready (see [Order form](#order-form)) | default text |
@@ -313,7 +314,7 @@ confirmation_texte = "Thank you, your registration is recorded. Programme: https
   libelle = "Your email"
   si      = "profil = Individual"
   ```
-- contents: `confirmation_texte` (otherwise the `merci` message), the answer number (if `afficher_numero`), then all the
+- contents: `confirmation_texte` (otherwise the `merci` message), the answer number (if `afficher_numero`, preceded by `numero_texte`), then all the
   answers, **in the respondent's language**; after a change (restricted access, `modifiable`), the subject says so;
 - the thank-you page mentions that the email was sent; "Reply" to the email writes to the first address in `notifier`;
 - safeguards against robots that would enter someone else's address: at most one email per address and per form
@@ -536,7 +537,7 @@ options_en = "Student | Researcher | Other"
 ```
 
 - **Translating a text**: add `_en` (or `_de`, `_es`… depending on the language) to its key. Translatable:
-  `titre`, `intro`, `merci`, `bouton` in `[formulaire]`; `libelle`, `aide`, `exemple`, `gauche`, `droite`, `options` in a field.
+  `titre`, `intro`, `merci`, `bouton`, `numero_texte` in `[formulaire]`; `libelle`, `aide`, `exemple`, `gauche`, `droite`, `options` in a field.
   `options_en` must have **as many choices, in the same order**, as `options` (otherwise the form is refused).
   An untranslated text is shown in the base language.
 - **Language shown**: that of the visitor's browser if it is one of `langues`, otherwise the base language.
@@ -570,7 +571,7 @@ All keys and all types have an English equivalent, which can be mixed with Frenc
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `confirmation` | `confirm` | | | |
 | `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure`, `total` | `phone`, `number`, `amount`, `time`, `sum` |
-| `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (or `radio`), `dropdown` (or `select`) |
+| `afficher_numero` / `numero_texte` | `show_number` / `number_text` | | `choix`, `liste` | `choice` (or `radio`), `dropdown` (or `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |
 | | | | `echelle`, `titre` | `scale`, `heading` |
