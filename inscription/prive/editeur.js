@@ -443,6 +443,10 @@
       props.appendChild(traduisible(g, 'intro', { libelle: T('edi_intro'), long: true }));
       props.appendChild(traduisible(g, 'merci', { libelle: T('edi_merci'), long: true, rows: 2, placeholder: T('edi_par_defaut') }));
       props.appendChild(traduisible(g, 'bouton', { libelle: T('edi_bouton'), placeholder: T('edi_par_defaut') }));
+      if (g.afficher_numero) {
+        props.appendChild(traduisible(g, 'numero_texte', { libelle: T('edi_numero_texte'), placeholder: T('edi_numero_texte_defaut'),
+          aide: T('edi_numero_texte_aide') }));
+      }
       if (g.confirmation) {
         props.appendChild(traduisible(g, 'confirmation_texte', { libelle: T('edi_confirmation_texte'), long: true, rows: 3,
           placeholder: T('edi_confirmation_texte_defaut'), aide: T('edi_confirmation_texte_aide') }));
@@ -483,7 +487,7 @@
       props.appendChild(caseCocher(g, 'modifiable', T('edi_modifiable')));
       props.appendChild(el('p', { classe: 'edi-aide', texte: T('edi_acces_aide') }));
     }
-    props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero')));
+    props.appendChild(caseCocher(g, 'afficher_numero', T('edi_afficher_numero'), dessinerProps));
     props.appendChild(texte(g, 'notifier', { libelle: T('edi_notifier'), placeholder: 'contact@exemple.fr', aide: T('edi_notifier_aide') }));
     // Courriel de confirmation au répondant : vers un champ e-mail du formulaire
     var mails = S.modele.champs.filter(function (c) { return c.type === 'email'; });

@@ -57,6 +57,7 @@ Réglages de la section `[formulaire]` :
 | `acces`     | `personnel` = accès restreint par lien personnel + mot de passe ; `lien` = par lien personnel seul (voir [Accès restreint](#accès-restreint)) | — (accès libre) |
 | `modifiable` | accès restreint : `oui` = chaque personne peut revenir modifier sa réponse ; `non` = une réponse définitive | oui |
 | `afficher_numero` | `non` = ne pas montrer le numéro de réponse après l'envoi (utile pour un sondage anonyme) | oui |
+| `numero_texte` | texte devant le numéro de réponse, après l'envoi et dans le courriel de confirmation, ex. `"Numéro de votre inscription :"` (traduisible) | « Numéro de votre réponse : » |
 | `langue`    | langue de l'interface pour ce formulaire (`fr`, `en`…) : boutons, messages d'erreur, valeur des cases | celle de `config.php` |
 | `langues`   | formulaire multilingue : langues proposées, ex. `"fr \| en"` (voir [Formulaire multilingue](#formulaire-multilingue)) | — |
 | `message`   | formulaire de commande : modèle du message envoyé au client quand sa commande est prête (voir [Formulaire de commande](#formulaire-de-commande)) | texte par défaut |
@@ -310,7 +311,7 @@ confirmation_texte = "Merci, votre inscription est enregistrée. Programme : htt
   libelle = "Votre courriel"
   si      = "profil = Particulier"
   ```
-- contenu : `confirmation_texte` (sinon le message `merci`), le numéro de réponse (si `afficher_numero`), puis toutes les
+- contenu : `confirmation_texte` (sinon le message `merci`), le numéro de réponse (si `afficher_numero`, précédé de `numero_texte`), puis toutes les
   réponses, **dans la langue du répondant** ; après une modification (accès restreint `modifiable`), le sujet l'indique ;
 - la page de remerciement signale l'envoi ; « Répondre » au courriel écrit à la première adresse de `notifier` ;
 - garde-fous contre les robots qui saisiraient l'adresse d'un tiers : au plus un courriel par adresse et par formulaire
@@ -531,7 +532,7 @@ options_en = "Student | Researcher | Other"
 ```
 
 - **Traduire un texte** : ajouter `_en` (ou `_de`, `_es`… selon la langue) à sa clé. Sont traduisibles :
-  `titre`, `intro`, `merci`, `bouton` dans `[formulaire]` ; `libelle`, `aide`, `exemple`, `gauche`, `droite`, `options` dans un champ.
+  `titre`, `intro`, `merci`, `bouton`, `numero_texte` dans `[formulaire]` ; `libelle`, `aide`, `exemple`, `gauche`, `droite`, `options` dans un champ.
   `options_en` doit compter **autant de choix, dans le même ordre**, que `options` (sinon le formulaire est refusé).
   Un texte non traduit s'affiche dans la langue de base.
 - **Langue affichée** : celle du navigateur du visiteur si elle fait partie de `langues`, sinon la langue de base.
@@ -565,7 +566,7 @@ Toutes les clés et tous les types ont un équivalent anglais, mélangeable avec
 | `notifier` | `notify` | | `texte`, `texte_long` | `text`, `textarea` |
 | `confirmation` | `confirm` | | | |
 | `diffusion` | `listed` | | `telephone`, `nombre`, `montant`, `heure`, `total` | `phone`, `number`, `amount`, `time`, `sum` |
-| `afficher_numero` | `show_number` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
+| `afficher_numero` / `numero_texte` | `show_number` / `number_text` | | `choix`, `liste` | `choice` (ou `radio`), `dropdown` (ou `select`) |
 | `acces` = `personnel` / `lien` | `access` = `personal` / `link` | | `modifiable` | `editable` |
 | `langue` / `langues` | `language` / `languages` | | `cases`, `case` | `checkboxes`, `consent` |
 | | | | `echelle`, `titre` | `scale`, `heading` |

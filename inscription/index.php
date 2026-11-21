@@ -230,7 +230,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['merci'])) {
         echo '<p>' . e(t('conf_envoyee')) . '</p>';
     }
     if ($form['afficher_numero'] && $sigOk) {
-        echo '<p>' . e(t('numero_reponse')) . ' <code>' . e($numero) . '</code><br>'
+        echo '<p>' . e(ins_numero_texte($form)) . ' <code>' . e($numero) . '</code><br>'
             . '<span class="petit">' . e(t('numero_conserver')) . '</span></p>';
     }
     echo '</div>';
